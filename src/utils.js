@@ -10,6 +10,42 @@ import { extension_settings } from '../../../../extensions.js';
 import { extensionName, METADATA_KEY, MEMORIES_KEY, CHARACTERS_KEY, RELATIONSHIPS_KEY, LAST_PROCESSED_KEY, EXTRACTED_BATCHES_KEY } from './constants.js';
 
 /**
+ * Whether a chat message is eligible for memory extraction.
+ * Visible messages always qualify. Auto-hidden messages (is_system with
+ * openvault_hidden) also qualify so batch indices stay stable after hide.
+ * Migration: unmarked auto-hidden user/AI turns (name matches persona/character).
+ * @param {object} m - Chat message
+ * @param {object} [context] - SillyTavern context (name1/name2 for migration)
+ * @returns {boolean}
+ */
+export function isExtractableMessage(m, context = null) {
+    if (!m) return false;
+    if (!m.is_system) return true;
+    if (m.extra?.openvault_hidden) return true;
+    // Migration for chats auto-hidden before openvault_hidden tagging
+    if (m.is_user) return true;
+    const ctx = context || getContext();
+    if (m.name && ctx) {
+        if (ctx.name1 && m.name === ctx.name1) return true;
+        if (ctx.name2 && m.name === ctx.name2) return true;
+    }
+    return false;
+}
+
+/**
+ * Chat messages eligible for extraction, with absolute indices.
+ * @param {object[]} chat - Full chat array
+ * @param {object} [context] - SillyTavern context
+ * @returns {object[]} Messages with idx set to absolute chat index
+ */
+export function getExtractableMessages(chat, context = null) {
+    const ctx = context || getContext();
+    return (chat || [])
+        .map((m, idx) => ({ ...m, idx }))
+        .filter(m => isExtractableMessage(m, ctx));
+}
+
+/**
  * Wrap a promise with a timeout
  * @param {Promise} promise - The promise to wrap
  * @param {number} ms - Timeout in milliseconds

@@ -6,8 +6,8 @@
 
 import { eventSource, event_types, saveChatConditional } from '../../../../../script.js';
 import { getContext, extension_settings } from '../../../../extensions.js';
-import { getOpenVaultData, getCurrentChatId, saveOpenVaultData, showToast, safeSetExtensionPrompt, withTimeout, log } from './utils.js';
-import { extensionName, MEMORIES_KEY, EXTRACTED_BATCHES_KEY, RETRIEVAL_TIMEOUT_MS } from './constants.js';
+import { getOpenVaultData, getCurrentChatId, saveOpenVaultData, showToast, safeSetExtensionPrompt, withTimeout, log, getExtractableMessages } from './utils.js';
+import { extensionName, MEMORIES_KEY, EXTRACTED_BATCHES_KEY, LAST_PROCESSED_KEY, RETRIEVAL_TIMEOUT_MS } from './constants.js';
 import { operationState, setGenerationLock, clearGenerationLock, isChatLoadingCooldown, setChatLoadingCooldown, resetOperationStatesIfSafe } from './state.js';
 import { setStatus } from './ui/status.js';
 import { refreshAllUI, resetMemoryBrowserPage } from './ui/browser.js';
@@ -17,7 +17,9 @@ import { updateInjection } from './retrieval/retrieve.js';
 /**
  * Auto-hide old messages beyond the threshold
  * Hides messages in pairs (user-assistant) to maintain conversation coherence
- * Messages are marked with is_system=true which excludes them from context
+ * Messages are marked with is_system=true which excludes them from context,
+ * and tagged with extra.openvault_hidden so extraction batching still sees them.
+ * Only hides messages at or before last_processed so extraction can stay ahead.
  */
 export async function autoHideOldMessages() {
     const settings = extension_settings[extensionName];
@@ -26,6 +28,8 @@ export async function autoHideOldMessages() {
     const context = getContext();
     const chat = context.chat || [];
     const threshold = settings.autoHideThreshold || 50;
+    const data = getOpenVaultData();
+    const lastProcessedId = data?.[LAST_PROCESSED_KEY] ?? -1;
 
     // Get visible (non-hidden) messages with their original indices
     const visibleMessages = chat
@@ -44,17 +48,34 @@ export async function autoHideOldMessages() {
 
     if (messagesToHide <= 0) return;
 
-    // Hide the oldest messages (they're at the start of visibleMessages array)
+    // Hide the oldest messages (they're at the start of visibleMessages array),
+    // but only those already covered by extraction
     let hiddenCount = 0;
     for (let i = 0; i < messagesToHide && i < visibleMessages.length; i++) {
         const msgIdx = visibleMessages[i].idx;
+        if (msgIdx > lastProcessedId) {
+            break;
+        }
         chat[msgIdx].is_system = true;
+        chat[msgIdx].extra = chat[msgIdx].extra || {};
+        chat[msgIdx].extra.openvault_hidden = true;
         hiddenCount++;
+    }
+
+    // Keep pair coherence if we stopped early on the extraction frontier
+    if (hiddenCount % 2 === 1) {
+        const lastHiddenIdx = visibleMessages[hiddenCount - 1].idx;
+        chat[lastHiddenIdx].is_system = false;
+        if (chat[lastHiddenIdx].extra) {
+            delete chat[lastHiddenIdx].extra.openvault_hidden;
+        }
+        hiddenCount--;
     }
 
     if (hiddenCount > 0) {
         await saveChatConditional();
-        log(`Auto-hid ${hiddenCount} messages (${pairsToHide} pairs) - threshold: ${threshold}`);
+        const pairsHidden = hiddenCount / 2;
+        log(`Auto-hid ${hiddenCount} messages (${pairsHidden} pairs) - threshold: ${threshold}`);
         showToast('info', `Auto-hid ${hiddenCount} old messages`);
     }
 }
@@ -220,12 +241,10 @@ export async function onMessageReceived(messageId) {
 
         const messageCount = settings.messagesPerExtraction || 10;
 
-        // Get all non-system messages
-        const nonSystemMessages = chat
-            .map((m, idx) => ({ ...m, idx }))
-            .filter(m => !m.is_system);
+        // Include auto-hidden messages so batch indices stay stable after hide
+        const extractableMessages = getExtractableMessages(chat, context);
 
-        const totalMessages = nonSystemMessages.length;
+        const totalMessages = extractableMessages.length;
 
         // Get the highest extracted batch number (-1 if none extracted yet)
         const extractedBatches = data[EXTRACTED_BATCHES_KEY] || [];
@@ -255,10 +274,10 @@ export async function onMessageReceived(messageId) {
             return;
         }
 
-        // Calculate message range for this batch (0-indexed)
+        // Calculate message range for this batch (0-indexed into extractable list)
         const startIdx = nextBatchToExtract * messageCount;
         const endIdx = startIdx + messageCount;
-        const batchMessages = nonSystemMessages.slice(startIdx, endIdx);
+        const batchMessages = extractableMessages.slice(startIdx, endIdx);
 
         if (batchMessages.length !== messageCount) {
             log(`Batch ${nextBatchToExtract} has wrong size (${batchMessages.length}/${messageCount}), skipping`);

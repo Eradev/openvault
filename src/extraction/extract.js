@@ -7,7 +7,7 @@
 import { getContext, extension_settings } from '../../../../../extensions.js';
 import { saveChatConditional } from '../../../../../../script.js';
 import { ConnectionManagerRequestService } from '../../../../shared.js';
-import { getOpenVaultData, saveOpenVaultData, showToast, log } from '../utils.js';
+import { getOpenVaultData, saveOpenVaultData, showToast, log, isExtractableMessage } from '../utils.js';
 import { extensionName, MEMORIES_KEY, LAST_PROCESSED_KEY, LAST_BATCH_KEY, EXTRACTED_BATCHES_KEY } from '../constants.js';
 import { setStatus } from '../ui/status.js';
 import { refreshAllUI } from '../ui/browser.js';
@@ -147,12 +147,13 @@ export async function extractMemories(messageIds = null) {
             .map(id => ({ id, ...chat[id] }))
             .filter(m => m);
     } else {
-        // Extract last few unprocessed messages (configurable count)
+        // Extract last few unprocessed messages (configurable count),
+        // including auto-hidden turns so manual extract can catch up
         const lastProcessedId = data[LAST_PROCESSED_KEY] || -1;
         const messageCount = settings.messagesPerExtraction || 5;
         messagesToExtract = chat
             .map((m, idx) => ({ id: idx, ...m }))
-            .filter(m => !m.is_system && m.id > lastProcessedId)
+            .filter(m => isExtractableMessage(m, context) && m.id > lastProcessedId)
             .slice(-messageCount);
     }
 
