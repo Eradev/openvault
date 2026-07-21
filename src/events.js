@@ -8,11 +8,11 @@ import { eventSource, event_types, saveChatConditional } from '../../../../../sc
 import { getContext, extension_settings } from '../../../../extensions.js';
 import { getOpenVaultData, getCurrentChatId, saveOpenVaultData, showToast, safeSetExtensionPrompt, withTimeout, log, getExtractableMessages } from './utils.js';
 import { extensionName, MEMORIES_KEY, EXTRACTED_BATCHES_KEY, LAST_PROCESSED_KEY, RETRIEVAL_TIMEOUT_MS } from './constants.js';
-import { operationState, setGenerationLock, clearGenerationLock, isChatLoadingCooldown, setChatLoadingCooldown, resetOperationStatesIfSafe } from './state.js';
+import { operationState, setGenerationLock, clearGenerationLock, isChatLoadingCooldown, setChatLoadingCooldown, resetOperationStatesIfSafe, isRerollGenerationType, clearCachedRetrieval } from './state.js';
 import { setStatus } from './ui/status.js';
 import { refreshAllUI, resetMemoryBrowserPage } from './ui/browser.js';
 import { extractMemories } from './extraction/extract.js';
-import { updateInjection } from './retrieval/retrieve.js';
+import { updateInjection, tryApplyCachedRetrieval } from './retrieval/retrieve.js';
 
 /**
  * Auto-hide old messages beyond the threshold
@@ -134,6 +134,16 @@ export async function onBeforeGeneration(type, options, dryRun = false) {
         const lastUserMessage = [...chat].reverse().find(m => m.is_user && !m.is_system);
         const pendingUserMessage = lastUserMessage?.mes || '';
 
+        // Swipe/regenerate: reuse last injection when cache is enabled and still valid
+        if (settings.cacheRetrievalOnReroll && isRerollGenerationType(type)) {
+            if (tryApplyCachedRetrieval(pendingUserMessage)) {
+                log(`>>> Using cached retrieval for ${type}`);
+                setStatus('ready');
+                return;
+            }
+            log(`>>> Cache miss on ${type} - running full retrieval`);
+        }
+
         // Show toast notification during retrieval
         showToast('info', 'Retrieving memories...', 'OpenVault', { timeOut: 2000 });
 
@@ -183,7 +193,8 @@ export function onChatChanged() {
     // Clear operation states on chat change to prevent stale locks
     resetOperationStatesIfSafe();
 
-    // Clear current injection - it will be refreshed in onBeforeGeneration
+    // Clear current injection and retrieval cache - refreshed in onBeforeGeneration
+    clearCachedRetrieval();
     safeSetExtensionPrompt('');
 
     // Refresh UI on chat change
@@ -372,6 +383,7 @@ export function updateEventListeners(skipInitialization = false) {
         }
     } else {
         // Clear injection when disabled/manual
+        clearCachedRetrieval();
         safeSetExtensionPrompt('');
         log('Manual mode - injection cleared');
     }

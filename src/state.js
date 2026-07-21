@@ -21,6 +21,55 @@ let generationLockTimeout = null;
 let chatLoadingCooldown = true;
 let chatLoadingTimeout = null;
 
+// Cached memory injection for swipe/regenerate (avoids redundant smart-retrieval calls)
+let retrievalCache = {
+    key: null,
+    contextText: null,
+};
+
+/**
+ * Generation types that reuse the previous turn's prompt context
+ * @param {string} type - SillyTavern generation type
+ * @returns {boolean}
+ */
+export function isRerollGenerationType(type) {
+    return type === 'swipe' || type === 'regenerate';
+}
+
+/**
+ * Get cached retrieval context if the key matches
+ * @param {string} key - Cache key for the current turn
+ * @returns {string|null}
+ */
+export function getCachedRetrieval(key) {
+    if (!key || !retrievalCache.key || retrievalCache.key !== key) {
+        return null;
+    }
+    return retrievalCache.contextText || null;
+}
+
+/**
+ * Store retrieval context for later rerolls
+ * @param {string} key - Cache key for the current turn
+ * @param {string} contextText - Formatted injection text
+ */
+export function setCachedRetrieval(key, contextText) {
+    retrievalCache = {
+        key: key || null,
+        contextText: contextText || null,
+    };
+}
+
+/**
+ * Clear the retrieval cache (chat change, disable, etc.)
+ */
+export function clearCachedRetrieval() {
+    retrievalCache = {
+        key: null,
+        contextText: null,
+    };
+}
+
 /**
  * Set generation lock with safety timeout
  */

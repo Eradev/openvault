@@ -117,6 +117,12 @@ function bindUIElements() {
         saveSettingsDebounced();
     });
 
+    // Cache retrieval on reroll toggle
+    $('#openvault_cache_reroll').on('change', function() {
+        settings.cacheRetrievalOnReroll = $(this).is(':checked');
+        saveSettingsDebounced();
+    });
+
     // Auto-hide toggle
     $('#openvault_auto_hide').on('change', function() {
         settings.autoHideEnabled = $(this).is(':checked');
@@ -196,6 +202,7 @@ export function updateUI() {
     $('#openvault_memory_context_count').val(settings.memoryContextCount);
     $('#openvault_memory_context_count_value').text(settings.memoryContextCount < 0 ? 'All' : settings.memoryContextCount);
     $('#openvault_smart_retrieval').prop('checked', settings.smartRetrievalEnabled);
+    $('#openvault_cache_reroll').prop('checked', settings.cacheRetrievalOnReroll !== false);
 
     // Auto-hide settings
     $('#openvault_auto_hide').prop('checked', settings.autoHideEnabled);

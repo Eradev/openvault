@@ -5,12 +5,65 @@
  */
 
 import { getContext, extension_settings } from '../../../../../extensions.js';
-import { getOpenVaultData, safeSetExtensionPrompt, showToast, log } from '../utils.js';
+import { getOpenVaultData, getCurrentChatId, safeSetExtensionPrompt, showToast, log } from '../utils.js';
 import { extensionName, MEMORIES_KEY, CHARACTERS_KEY, LAST_BATCH_KEY } from '../constants.js';
 import { setStatus } from '../ui/status.js';
 import { getActiveCharacters, getPOVContext } from '../pov.js';
 import { selectRelevantMemories } from './scoring.js';
 import { getRelationshipContext, formatContextForInjection } from './formatting.js';
+import { getCachedRetrieval, setCachedRetrieval, clearCachedRetrieval } from '../state.js';
+
+/**
+ * Build a cache key for the current retrieval turn.
+ * Same user message + memory set + retrieval settings → reusable on swipe/regenerate.
+ * @param {string} pendingUserMessage - Last user message text
+ * @returns {string|null}
+ */
+export function buildRetrievalCacheKey(pendingUserMessage = '') {
+    const context = getContext();
+    const data = getOpenVaultData();
+    if (!context?.chat || !data) return null;
+
+    const settings = extension_settings[extensionName];
+    const chat = context.chat;
+    let lastUserIdx = -1;
+    for (let i = chat.length - 1; i >= 0; i--) {
+        if (chat[i].is_user && !chat[i].is_system) {
+            lastUserIdx = i;
+            break;
+        }
+    }
+
+    const memories = data[MEMORIES_KEY] || [];
+    const parts = [
+        getCurrentChatId() || 'unknown',
+        String(lastUserIdx),
+        String(pendingUserMessage.length),
+        // Lightweight content fingerprint (avoid storing full message)
+        String(simpleHash(pendingUserMessage)),
+        String(memories.length),
+        String(data[LAST_BATCH_KEY] || ''),
+        String(settings.tokenBudget),
+        String(settings.maxMemoriesPerRetrieval),
+        settings.smartRetrievalEnabled ? '1' : '0',
+        String(settings.retrievalProfile || ''),
+    ];
+    return parts.join('|');
+}
+
+/**
+ * Simple string hash for cache keys
+ * @param {string} str
+ * @returns {number}
+ */
+function simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < (str || '').length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0;
+    }
+    return hash;
+}
 
 /**
  * Inject retrieved context into the prompt
@@ -19,6 +72,7 @@ import { getRelationshipContext, formatContextForInjection } from './formatting.
 export function injectContext(contextText) {
     if (!contextText) {
         // Clear the injection if no context
+        clearCachedRetrieval();
         safeSetExtensionPrompt('');
         return;
     }
@@ -28,6 +82,24 @@ export function injectContext(contextText) {
     } else {
         log('Failed to inject context');
     }
+}
+
+/**
+ * Try to reuse a cached injection for swipe/regenerate
+ * @param {string} pendingUserMessage - Last user message text
+ * @returns {boolean} True if cache was applied
+ */
+export function tryApplyCachedRetrieval(pendingUserMessage = '') {
+    const key = buildRetrievalCacheKey(pendingUserMessage);
+    const cached = getCachedRetrieval(key);
+    if (!cached) {
+        log('Retrieval cache miss');
+        return false;
+    }
+
+    injectContext(cached);
+    log('Retrieval cache hit - skipped smart retrieval LLM call');
+    return true;
 }
 
 /**
@@ -156,6 +228,8 @@ export async function retrieveAndInjectContext() {
 
         if (formattedContext) {
             injectContext(formattedContext);
+            const lastUserMessage = [...chat].reverse().find(m => m.is_user && !m.is_system);
+            setCachedRetrieval(buildRetrievalCacheKey(lastUserMessage?.mes || ''), formattedContext);
             log(`Injected ${relevantMemories.length} memories into context`);
             showToast('success', `Retrieved ${relevantMemories.length} relevant memories`);
         }
@@ -179,24 +253,28 @@ export async function updateInjection(pendingUserMessage = '') {
 
     // Clear injection if disabled or not in automatic mode
     if (!settings.enabled || !settings.automaticMode) {
+        clearCachedRetrieval();
         safeSetExtensionPrompt('');
         return;
     }
 
     const context = getContext();
     if (!context.chat || context.chat.length === 0) {
+        clearCachedRetrieval();
         safeSetExtensionPrompt('');
         return;
     }
 
     const data = getOpenVaultData();
     if (!data) {
+        clearCachedRetrieval();
         safeSetExtensionPrompt('');
         return;
     }
     const memories = data[MEMORIES_KEY] || [];
 
     if (memories.length === 0) {
+        clearCachedRetrieval();
         safeSetExtensionPrompt('');
         return;
     }
@@ -263,7 +341,7 @@ export async function updateInjection(pendingUserMessage = '') {
     }
 
     if (memoriesToUse.length === 0) {
-        safeSetExtensionPrompt('');
+        injectContext('');
         return;
     }
 
@@ -292,7 +370,7 @@ export async function updateInjection(pendingUserMessage = '') {
     );
 
     if (!relevantMemories || relevantMemories.length === 0) {
-        safeSetExtensionPrompt('');
+        injectContext('');
         return;
     }
 
@@ -318,6 +396,7 @@ export async function updateInjection(pendingUserMessage = '') {
 
     if (formattedContext) {
         injectContext(formattedContext);
+        setCachedRetrieval(buildRetrievalCacheKey(pendingUserMessage), formattedContext);
         log(`Injection updated: ${relevantMemories.length} memories`);
     }
 }

@@ -56,6 +56,7 @@ Use the buttons in the settings panel:
 | **Messages per Extraction** | Messages to analyze per extraction | 5 |
 | **Memory Context** | Memories shown to extraction LLM (-1 = All) | All |
 | **Smart Retrieval** | Use LLM to select relevant memories | Off |
+| **Cache retrieval on reroll** | Reuse memory context on swipe/regenerate (skips extra LLM call) | On |
 | **Auto-hide old messages** | Hide messages beyond threshold | On |
 | **Messages to keep visible** | Auto-hide threshold | 50 |
 

@@ -13,8 +13,9 @@ import { setStatus } from '../ui/status.js';
 import { refreshAllUI } from '../ui/browser.js';
 import { buildExtractionPrompt } from './prompts.js';
 import { parseExtractionResult, updateCharacterStatesFromEvents, updateRelationshipsFromEvents } from './parser.js';
-import { clearAllLocks } from '../state.js';
+import { clearAllLocks, clearCachedRetrieval } from '../state.js';
 import { safeSetExtensionPrompt } from '../utils.js';
+import { clearCachedRetrieval } from '../state.js';
 
 /**
  * Get recent memories for context during extraction
@@ -353,6 +354,7 @@ export async function extractAllMessages(updateEventListenersFn) {
     clearAllLocks();
 
     // Clear injection and save
+    clearCachedRetrieval();
     safeSetExtensionPrompt('');
     await saveChatConditional();
 

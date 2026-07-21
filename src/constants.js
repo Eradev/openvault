@@ -29,6 +29,7 @@ export const defaultSettings = {
     messagesPerExtraction: 10,
     memoryContextCount: -1,
     smartRetrievalEnabled: true,
+    cacheRetrievalOnReroll: true,
     // Auto-hide settings
     autoHideEnabled: true,
     autoHideThreshold: 50,
