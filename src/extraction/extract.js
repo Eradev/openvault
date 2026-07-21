@@ -15,7 +15,6 @@ import { buildExtractionPrompt } from './prompts.js';
 import { parseExtractionResult, updateCharacterStatesFromEvents, updateRelationshipsFromEvents } from './parser.js';
 import { clearAllLocks, clearCachedRetrieval } from '../state.js';
 import { safeSetExtensionPrompt } from '../utils.js';
-import { clearCachedRetrieval } from '../state.js';
 
 /**
  * Get recent memories for context during extraction
