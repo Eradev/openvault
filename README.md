@@ -20,14 +20,15 @@ OpenVault provides POV-aware memory with witness tracking, relationship dynamics
 
 1. Open SillyTavern
 2. Go to **Extensions** > **Install Extension**
-3. Enter the repository URL: `https://github.com/unkarelian/openvault`
+3. Enter the repository URL: `https://github.com/eradev/openvault`
 4. Click Install
 5. Reload SillyTavern
 
 Or manually clone into your extensions folder:
+
 ```bash
 cd SillyTavern/data/<user>/extensions
-git clone https://github.com/unkarelian/openvault
+git clone https://github.com/eradev/openvault
 ```
 
 ## Usage
@@ -35,12 +36,14 @@ git clone https://github.com/unkarelian/openvault
 ### Automatic Mode (Default)
 
 When enabled, OpenVault automatically:
+
 1. **Before AI response**: Retrieves relevant memories and injects them as context
 2. **After AI response**: Extracts new memories from the conversation (every N messages)
 
 ### Manual Mode
 
 Use the buttons in the settings panel:
+
 - **Extract Memories**: Analyze recent messages for significant events
 - **Retrieve Context**: Manually inject relevant memories into context
 - **Backfill Chat History**: Extract memories from the entire chat history
@@ -48,7 +51,7 @@ Use the buttons in the settings panel:
 ## Settings
 
 | Setting | Description | Default |
-|---------|-------------|---------|
+| --------- | ------------- | --------- |
 | **Enable OpenVault** | Toggle the extension on/off | On |
 | **Automatic Mode** | Auto-extract and retrieve memories | On |
 | **Extraction Profile** | LLM connection profile for extraction | Current |
@@ -65,11 +68,13 @@ Use the buttons in the settings panel:
 ### Memory Extraction
 
 OpenVault sends recent messages to an LLM with:
+
 - Character descriptions (from character card)
 - Persona description (your character)
 - Existing memories (for consistency)
 
 The LLM extracts structured events with:
+
 - **Event type**: action, revelation, emotion_shift, relationship_change
 - **Importance**: 1-5 scale
 - **Summary**: Brief description
@@ -81,6 +86,7 @@ The LLM extracts structured events with:
 ### Memory Retrieval
 
 Before the AI responds, OpenVault:
+
 1. Analyzes the current conversation context
 2. Finds relevant memories (filtered by POV/witnesses)
 3. Injects them as context within the token budget
@@ -92,6 +98,7 @@ When enabled, messages older than the threshold are hidden from context (in user
 ## Data Storage
 
 All data is stored in `chatMetadata.openvault`:
+
 - `memories`: Array of extracted memory events
 - `character_states`: Current emotional states per character
 - `relationships`: Relationship dynamics between characters
@@ -101,7 +108,7 @@ Data is per-chat and persists with the chat file.
 ## Memory Types
 
 | Type | Description |
-|------|-------------|
+| ------ | ------------- |
 | **action** | Significant actions taken by characters |
 | **revelation** | New information revealed or discovered |
 | **emotion_shift** | Changes in emotional state |
