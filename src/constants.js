@@ -40,6 +40,8 @@ export const defaultSettings = {
 // Timeout constants
 export const RETRIEVAL_TIMEOUT_MS = 300000; // 5 minutes max for retrieval
 export const GENERATION_LOCK_TIMEOUT_MS = 300000; // 5 minutes safety timeout
+// Wait after AI reply before extraction to avoid competing with the main API rate limit
+export const EXTRACTION_DELAY_MS = 3000;
 
 // Pagination constants
 export const MEMORIES_PER_PAGE = 10;

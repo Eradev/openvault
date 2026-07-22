@@ -6,7 +6,7 @@
 
 import { getContext, extension_settings } from '../../../../../extensions.js';
 import { ConnectionManagerRequestService } from '../../../../shared.js';
-import { log, showToast } from '../utils.js';
+import { log, showToast, getTransientApiErrorMessage } from '../utils.js';
 import { extensionName } from '../constants.js';
 
 /**
@@ -79,7 +79,12 @@ async function callLLMForRetrieval(prompt) {
     } catch (error) {
         const errorMessage = error.message || 'Unknown error';
         log(`Retrieval LLM call error: ${errorMessage}`);
-        showToast('error', `Smart retrieval failed: ${errorMessage}`);
+        const transientMessage = getTransientApiErrorMessage(error);
+        if (transientMessage) {
+            showToast('warning', `Smart retrieval: ${transientMessage}`);
+        } else {
+            showToast('error', `Smart retrieval failed: ${errorMessage}`);
+        }
         throw error;
     }
 }

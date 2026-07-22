@@ -6,8 +6,8 @@
 
 import { eventSource, event_types, saveChatConditional } from '../../../../../script.js';
 import { getContext, extension_settings } from '../../../../extensions.js';
-import { getOpenVaultData, getCurrentChatId, saveOpenVaultData, showToast, safeSetExtensionPrompt, withTimeout, log, getExtractableMessages } from './utils.js';
-import { extensionName, MEMORIES_KEY, EXTRACTED_BATCHES_KEY, LAST_PROCESSED_KEY, RETRIEVAL_TIMEOUT_MS } from './constants.js';
+import { getOpenVaultData, getCurrentChatId, saveOpenVaultData, showToast, safeSetExtensionPrompt, withTimeout, log, getExtractableMessages, getTransientApiErrorMessage } from './utils.js';
+import { extensionName, MEMORIES_KEY, EXTRACTED_BATCHES_KEY, LAST_PROCESSED_KEY, RETRIEVAL_TIMEOUT_MS, EXTRACTION_DELAY_MS } from './constants.js';
 import { operationState, setGenerationLock, clearGenerationLock, isChatLoadingCooldown, setChatLoadingCooldown, resetOperationStatesIfSafe, isRerollGenerationType, clearCachedRetrieval } from './state.js';
 import { setStatus } from './ui/status.js';
 import { refreshAllUI, resetMemoryBrowserPage } from './ui/browser.js';
@@ -297,6 +297,16 @@ export async function onMessageReceived(messageId) {
 
         log(`Extracting batch ${nextBatchToExtract} (messages ${startIdx}-${endIdx - 1}, indices: ${batchMessages.map(m => m.idx).join(',')})`);
 
+        // Brief delay so extraction doesn't immediately compete with the just-finished reply API call
+        log(`Waiting ${EXTRACTION_DELAY_MS}ms before extraction to reduce rate-limit risk`);
+        await new Promise(resolve => setTimeout(resolve, EXTRACTION_DELAY_MS));
+
+        // Bail if user started another generation during the delay
+        if (operationState.generationInProgress || operationState.retrievalInProgress) {
+            log('Skipping extraction - generation/retrieval started during delay');
+            return;
+        }
+
         // Show extraction indicator
         setStatus('extracting');
         showToast('info', `Extracting memories (batch ${nextBatchToExtract + 1}, messages ${startIdx + 1}-${endIdx})...`, 'OpenVault', {
@@ -308,6 +318,13 @@ export async function onMessageReceived(messageId) {
 
         const messageIds = batchMessages.map(m => m.idx);
         const result = await extractMemories(messageIds);
+
+        // Soft failure (429/abort) — leave batch unmarked so it can retry later
+        if (result?.failed) {
+            $('.openvault-extracting-toast').remove();
+            log(`Batch ${nextBatchToExtract} soft-failed (${result.reason}), will retry later`);
+            return;
+        }
 
         // Check if chat changed during extraction - don't save to wrong chat
         const chatIdAfterExtraction = getCurrentChatId();
@@ -343,7 +360,12 @@ export async function onMessageReceived(messageId) {
         console.error('[OpenVault] Automatic extraction error:', error);
         // Clear the persistent toast and show error
         $('.openvault-extracting-toast').remove();
-        showToast('error', `Extraction failed: ${error.message}`, 'OpenVault');
+        const transientMessage = getTransientApiErrorMessage(error);
+        showToast(
+            transientMessage ? 'warning' : 'error',
+            transientMessage || `Extraction failed: ${error?.message || 'Unknown error'}`,
+            'OpenVault'
+        );
     } finally {
         operationState.extractionInProgress = false;
         setStatus('ready');

@@ -7,14 +7,13 @@
 import { getContext, extension_settings } from '../../../../../extensions.js';
 import { saveChatConditional } from '../../../../../../script.js';
 import { ConnectionManagerRequestService } from '../../../../shared.js';
-import { getOpenVaultData, saveOpenVaultData, showToast, log, isExtractableMessage } from '../utils.js';
+import { getOpenVaultData, saveOpenVaultData, showToast, log, isExtractableMessage, getTransientApiErrorMessage, isAbortError, isRateLimitError, safeSetExtensionPrompt } from '../utils.js';
 import { extensionName, MEMORIES_KEY, LAST_PROCESSED_KEY, LAST_BATCH_KEY, EXTRACTED_BATCHES_KEY } from '../constants.js';
 import { setStatus } from '../ui/status.js';
 import { refreshAllUI } from '../ui/browser.js';
 import { buildExtractionPrompt } from './prompts.js';
 import { parseExtractionResult, updateCharacterStatesFromEvents, updateRelationshipsFromEvents } from './parser.js';
 import { clearAllLocks, clearCachedRetrieval } from '../state.js';
-import { safeSetExtensionPrompt } from '../utils.js';
 
 /**
  * Get recent memories for context during extraction
@@ -65,58 +64,53 @@ export async function callLLMForExtraction(prompt) {
         throw new Error('No connection profile available for extraction. Please configure a profile in Connection Manager.');
     }
 
-    try {
-        log(`Using ConnectionManagerRequestService with profile: ${profileId}`);
+    log(`Using ConnectionManagerRequestService with profile: ${profileId}`);
 
-        // Build messages array
-        const messages = [
-            {
-                role: 'system',
-                content: 'You are a helpful assistant that extracts structured data from roleplay conversations. Always respond with valid JSON only, no markdown formatting.'
-            },
-            { role: 'user', content: prompt }
-        ];
+    // Build messages array
+    const messages = [
+        {
+            role: 'system',
+            content: 'You are a helpful assistant that extracts structured data from roleplay conversations. Always respond with valid JSON only, no markdown formatting.'
+        },
+        { role: 'user', content: prompt }
+    ];
 
-        // Send request via ConnectionManagerRequestService
-        const result = await ConnectionManagerRequestService.sendRequest(
-            profileId,
-            messages,
-            2000, // max tokens
-            {
-                includePreset: true,
-                includeInstruct: true,
-                stream: false
-            },
-            {} // override payload
-        );
+    // Send request via ConnectionManagerRequestService
+    const result = await ConnectionManagerRequestService.sendRequest(
+        profileId,
+        messages,
+        2000, // max tokens
+        {
+            includePreset: true,
+            includeInstruct: true,
+            stream: false
+        },
+        {} // override payload
+    );
 
-        // Extract content from response
-        const content = result?.content || result || '';
+    // Extract content from response
+    const content = result?.content || result || '';
 
-        if (!content) {
-            throw new Error('Empty response from LLM');
-        }
-
-        // Parse reasoning if present (some models return thinking tags)
-        const context = getContext();
-        if (context.parseReasoningFromString) {
-            const parsed = context.parseReasoningFromString(content);
-            return parsed ? parsed.content : content;
-        }
-
-        return content;
-    } catch (error) {
-        const errorMessage = error.message || 'Unknown error';
-        log(`LLM call error: ${errorMessage}`);
-        showToast('error', `Extraction failed: ${errorMessage}`);
-        throw error;
+    if (!content) {
+        throw new Error('Empty response from LLM');
     }
+
+    // Parse reasoning if present (some models return thinking tags)
+    const context = getContext();
+    if (context.parseReasoningFromString) {
+        const parsed = context.parseReasoningFromString(content);
+        return parsed ? parsed.content : content;
+    }
+
+    return content;
 }
 
 /**
- * Extract memories from messages using LLM
+ * Extract memories from messages using LLM.
+ * Never rethrows — API failures (429, abort, etc.) return a soft failure result
+ * so callers (and unawaited UI handlers) cannot crash SillyTavern.
  * @param {number[]} messageIds - Optional specific message IDs to extract
- * @returns {Promise<{events_created: number, messages_processed: number}|undefined>}
+ * @returns {Promise<{events_created: number, messages_processed: number, failed?: boolean}|undefined>}
  */
 export async function extractMemories(messageIds = null) {
     const settings = extension_settings[extensionName];
@@ -190,7 +184,7 @@ export async function extractMemories(messageIds = null) {
 
         const extractionPrompt = buildExtractionPrompt(messagesText, characterName, userName, existingMemories, characterDescription, personaDescription);
 
-        // Call LLM for extraction (throws on error)
+        // Call LLM for extraction
         const extractedJson = await callLLMForExtraction(extractionPrompt);
 
         // Parse and store extracted events
@@ -225,10 +219,31 @@ export async function extractMemories(messageIds = null) {
 
         return { events_created: events.length, messages_processed: messagesToExtract.length };
     } catch (error) {
+        const transientMessage = getTransientApiErrorMessage(error);
         console.error('[OpenVault] Extraction error:', error);
-        showToast('error', `Extraction failed: ${error.message}`);
+
+        if (transientMessage) {
+            // Soft failure — do not rethrow (avoids unhandled rejection / ST crash)
+            log(`Extraction soft-failed: ${error?.message || error}`);
+            showToast('warning', transientMessage, 'OpenVault');
+            setStatus('ready');
+            return {
+                events_created: 0,
+                messages_processed: messagesToExtract.length,
+                failed: true,
+                reason: isRateLimitError(error) ? 'rate_limit' : isAbortError(error) ? 'aborted' : 'transient',
+            };
+        }
+
+        showToast('error', `Extraction failed: ${error?.message || 'Unknown error'}`);
         setStatus('error');
-        throw error;
+        // Still do not rethrow — keep SillyTavern stable
+        return {
+            events_created: 0,
+            messages_processed: messagesToExtract.length,
+            failed: true,
+            reason: 'error',
+        };
     }
 }
 
@@ -326,13 +341,25 @@ export async function extractAllMessages(updateEventListenersFn) {
             const result = await extractMemories(batch);
             totalEvents += result?.events_created || 0;
 
-            // Mark this batch as extracted
-            if (!data[EXTRACTED_BATCHES_KEY].includes(i)) {
-                data[EXTRACTED_BATCHES_KEY].push(i);
+            // On rate limit, pause longer before continuing
+            if (result?.reason === 'rate_limit' && batchNum < completeBatches) {
+                const cooldownMs = 15000;
+                log(`Rate limited during backfill — waiting ${cooldownMs}ms`);
+                $('.openvault-backfill-toast .toast-message').text(
+                    `Backfill: ${i}/${completeBatches} - Rate limited, waiting...`
+                );
+                await new Promise(resolve => setTimeout(resolve, cooldownMs));
+            }
+
+            // Mark this batch as extracted only on success with events
+            if (result && !result.failed && result.events_created > 0) {
+                if (!data[EXTRACTED_BATCHES_KEY].includes(i)) {
+                    data[EXTRACTED_BATCHES_KEY].push(i);
+                }
             }
 
             // Delay between batches based on rate limit setting
-            if (batchNum < completeBatches) {
+            if (batchNum < completeBatches && result?.reason !== 'rate_limit') {
                 const rpm = settings.backfillMaxRPM || 30;
                 const delayMs = Math.ceil(60000 / rpm);
                 log(`Rate limiting: waiting ${delayMs}ms (${rpm} RPM)`);

@@ -146,13 +146,22 @@ function bindUIElements() {
 
     // Manual action buttons
     $('#openvault_extract_btn').on('click', () => {
-        if (extractMemoriesFn) extractMemoriesFn();
+        if (!extractMemoriesFn) return;
+        Promise.resolve(extractMemoriesFn()).catch(error => {
+            console.error('[OpenVault] Manual extract error:', error);
+        });
     });
     $('#openvault_retrieve_btn').on('click', () => {
-        if (retrieveAndInjectContextFn) retrieveAndInjectContextFn();
+        if (!retrieveAndInjectContextFn) return;
+        Promise.resolve(retrieveAndInjectContextFn()).catch(error => {
+            console.error('[OpenVault] Manual retrieve error:', error);
+        });
     });
     $('#openvault_extract_all_btn').on('click', () => {
-        if (extractAllMessagesFn) extractAllMessagesFn();
+        if (!extractAllMessagesFn) return;
+        Promise.resolve(extractAllMessagesFn()).catch(error => {
+            console.error('[OpenVault] Backfill error:', error);
+        });
     });
     $('#openvault_refresh_stats_btn').on('click', () => refreshAllUI());
 

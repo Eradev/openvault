@@ -46,18 +46,80 @@ export function getExtractableMessages(chat, context = null) {
 }
 
 /**
- * Wrap a promise with a timeout
+ * Wrap a promise with a timeout.
+ * Safe against unhandled rejections when the timeout wins first
+ * (the underlying request may still abort/reject later).
  * @param {Promise} promise - The promise to wrap
  * @param {number} ms - Timeout in milliseconds
  * @param {string} operation - Name for error message
  */
 export function withTimeout(promise, ms, operation = 'Operation') {
-    return Promise.race([
-        promise,
-        new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`${operation} timed out after ${ms}ms`)), ms)
-        )
-    ]);
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+            if (!settled) {
+                settled = true;
+                reject(new Error(`${operation} timed out after ${ms}ms`));
+            }
+        }, ms);
+
+        Promise.resolve(promise).then(
+            value => {
+                if (!settled) {
+                    settled = true;
+                    clearTimeout(timer);
+                    resolve(value);
+                }
+            },
+            error => {
+                if (!settled) {
+                    settled = true;
+                    clearTimeout(timer);
+                    reject(error);
+                }
+            }
+        );
+    });
+}
+
+/**
+ * Whether an error looks like a user/system abort (not a hard failure)
+ * @param {any} error
+ * @returns {boolean}
+ */
+export function isAbortError(error) {
+    if (!error) return false;
+    if (error.name === 'AbortError') return true;
+    if (error.type === 'aborted') return true;
+    const message = String(error.message || error || '');
+    return /abort(ed|ion)?|the operation was aborted|signal is aborted/i.test(message);
+}
+
+/**
+ * Whether an error looks like HTTP 429 / rate limiting
+ * @param {any} error
+ * @returns {boolean}
+ */
+export function isRateLimitError(error) {
+    if (!error) return false;
+    if (error.status === 429 || error.statusCode === 429 || error.code === 429) return true;
+    const message = String(error.message || error || '');
+    return /\b429\b|too many requests|rate.?limit/i.test(message);
+}
+
+/**
+ * User-facing message for transient API failures
+ * @param {any} error
+ * @returns {string|null} Message if transient, else null
+ */
+export function getTransientApiErrorMessage(error) {
+    if (isAbortError(error)) {
+        return 'Request was cancelled — skipped this run';
+    }
+    if (isRateLimitError(error)) {
+        return 'Rate limited (429) — skipped this run. Try again in a moment.';
+    }
+    return null;
 }
 
 /**
