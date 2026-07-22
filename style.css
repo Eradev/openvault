@@ -86,12 +86,14 @@
 /* Statistics */
 .openvault-stats {
     display: flex;
+    flex-wrap: wrap;
     gap: 15px;
     margin-bottom: 10px;
 }
 
 .openvault-stat {
     flex: 1;
+    min-width: 70px;
     text-align: center;
     padding: 10px;
     background: var(--SmartThemeBlurTintColor, rgba(0,0,0,0.2));
@@ -114,12 +116,14 @@
 /* Filters */
 .openvault-filters {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 10px;
 }
 
 .openvault-filters select {
     flex: 1;
+    min-width: 100px;
 }
 
 /* Memory list */
@@ -151,6 +155,10 @@
 
 .openvault-memory-item.relationship_change {
     border-left-color: #c4a;
+}
+
+.openvault-memory-item.place_change {
+    border-left-color: #4ac;
 }
 
 .openvault-memory-header {
@@ -331,6 +339,78 @@
 
 .openvault-bar-fill.tension {
     background: #c44;
+}
+
+/* Places */
+.openvault-place-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.openvault-place-item {
+    padding: 10px;
+    margin-bottom: 8px;
+    background: var(--SmartThemeBlurTintColor, rgba(0,0,0,0.2));
+    border-radius: 4px;
+}
+
+.openvault-place-name {
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+
+.openvault-place-aliases {
+    font-size: 0.8em;
+    color: var(--SmartThemeEmColor, #888);
+    margin-bottom: 6px;
+}
+
+.openvault-place-description {
+    font-size: 0.9em;
+    margin-bottom: 6px;
+    line-height: 1.35;
+}
+
+.openvault-placeholder-inline {
+    font-style: italic;
+    color: var(--SmartThemeEmColor, #888);
+    padding: 0;
+    text-align: left;
+}
+
+.openvault-place-occupants {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.openvault-occupant-tag {
+    font-size: 0.8em;
+    padding: 2px 6px;
+    background: var(--SmartThemeBorderColor, rgba(255,255,255,0.08));
+    border-radius: 3px;
+}
+
+.openvault-occupant-tag em {
+    font-style: normal;
+    opacity: 0.75;
+}
+
+.openvault-place-features {
+    font-size: 0.8em;
+    color: var(--SmartThemeEmColor, #888);
+    margin-bottom: 6px;
+}
+
+.openvault-memory-location {
+    font-size: 0.8em;
+    color: var(--SmartThemeEmColor, #888);
+    margin: 4px 0;
+}
+
+.openvault-memory-location i {
+    margin-right: 4px;
 }
 
 /* Placeholder */

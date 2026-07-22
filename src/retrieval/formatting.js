@@ -1,11 +1,12 @@
 /**
  * OpenVault Context Formatting
  *
- * Formats memories and relationships for injection into prompts.
+ * Formats memories, relationships, and places for injection into prompts.
  */
 
 import { getContext } from '../../../../../extensions.js';
 import { RELATIONSHIPS_KEY } from '../constants.js';
+import { isUnknownLocation } from '../places.js';
 
 /**
  * Get relationship context for active characters
@@ -40,15 +41,34 @@ export function getRelationshipContext(data, povCharacter, activeCharacters) {
 }
 
 /**
+ * Format a place profile into a compact injection line.
+ * @param {Object} place
+ * @returns {string}
+ */
+export function formatPlaceLine(place) {
+    if (!place) return '';
+    const parts = [];
+    if (place.description) parts.push(place.description);
+    const occupants = place.occupants && Object.keys(place.occupants).length > 0
+        ? Object.entries(place.occupants).map(([n, r]) => `${n} (${r})`).join(', ')
+        : '';
+    if (occupants) parts.push(`Occupants: ${occupants}`);
+    if (place.features?.length) parts.push(`Features: ${place.features.join(', ')}`);
+    const detail = parts.length ? `: ${parts.join(' | ')}` : '';
+    return `- ${place.name}${detail}`;
+}
+
+/**
  * Format context for injection into prompt
  * @param {Object[]} memories - Selected memories
  * @param {Object[]} relationships - Relevant relationships
  * @param {Object} emotionalInfo - Emotional state info { emotion, fromMessages }
  * @param {string} characterName - Character name for header
  * @param {number} tokenBudget - Maximum token budget
+ * @param {Object[]} [places] - Known places to inject
  * @returns {string} Formatted context string
  */
-export function formatContextForInjection(memories, relationships, emotionalInfo, characterName, tokenBudget) {
+export function formatContextForInjection(memories, relationships, emotionalInfo, characterName, tokenBudget, places = []) {
     const lines = [];
 
     // Get current message number for context
@@ -86,6 +106,15 @@ export function formatContextForInjection(memories, relationships, emotionalInfo
         lines.push('');
     }
 
+    // Known places (witness-gated, already filtered by caller)
+    if (places && places.length > 0) {
+        lines.push('Known places:');
+        for (const place of places) {
+            lines.push(formatPlaceLine(place));
+        }
+        lines.push('');
+    }
+
     // Memories - sorted by sequence (chronological order) with message numbers
     if (memories && memories.length > 0) {
         // Sort by sequence number (earlier events first)
@@ -111,7 +140,10 @@ export function formatContextForInjection(memories, relationships, emotionalInfo
             // Importance indicator: star for each level (1-5)
             const importance = memory.importance || 3;
             const importanceLabel = '\u2605'.repeat(importance);
-            lines.push(`${index + 1}. ${msgLabel} [${importanceLabel}] ${prefix}${memory.summary}`);
+            const locationLabel = !isUnknownLocation(memory.location)
+                ? ` @ ${memory.location}`
+                : '';
+            lines.push(`${index + 1}. ${msgLabel} [${importanceLabel}] ${prefix}${memory.summary}${locationLabel}`);
         });
     }
 
@@ -123,14 +155,47 @@ export function formatContextForInjection(memories, relationships, emotionalInfo
 
     // Skip truncation if tokenBudget is -1 (no limit)
     if (tokenBudget >= 0 && estimatedTokens > tokenBudget) {
-        // Truncate memories if needed
+        // Prefer truncating place details first
+        if (places && places.length > 0) {
+            const hasRichPlaceDetail = places.some(p =>
+                (p.description && p.description.length > 80) || (p.features || []).length > 2
+            );
+            if (hasRichPlaceDetail) {
+                const slimPlaces = places.map(p => ({
+                    ...p,
+                    description: (p.description || '').slice(0, 80),
+                    features: (p.features || []).slice(0, 2),
+                }));
+                return formatContextForInjection(
+                    memories,
+                    relationships,
+                    emotionalInfo,
+                    characterName,
+                    tokenBudget,
+                    slimPlaces
+                );
+            }
+            // Still over budget with slim places — drop places before memories if needed
+            if (!memories || memories.length === 0) {
+                return formatContextForInjection(
+                    memories,
+                    relationships,
+                    emotionalInfo,
+                    characterName,
+                    tokenBudget * 2,
+                    []
+                );
+            }
+        }
+
+        // Truncate memories if still over budget
         const overhead = (lines.slice(0, 5).join('\n').length + lines.slice(-1).join('\n').length) / 4;
         const availableForMemories = tokenBudget - overhead;
 
         const truncatedMemories = [];
         let currentTokens = 0;
 
-        for (const memory of memories) {
+        for (const memory of (memories || [])) {
             const memoryTokens = (memory.summary?.length || 0) / 4 + 5;
             if (currentTokens + memoryTokens <= availableForMemories) {
                 truncatedMemories.push(memory);
@@ -140,8 +205,27 @@ export function formatContextForInjection(memories, relationships, emotionalInfo
             }
         }
 
-        // Rebuild with truncated memories
-        return formatContextForInjection(truncatedMemories, relationships, emotionalInfo, characterName, tokenBudget * 2);
+        // If we couldn't drop any memories, drop places next to avoid infinite recursion
+        if (truncatedMemories.length === (memories || []).length && places?.length) {
+            return formatContextForInjection(
+                truncatedMemories,
+                relationships,
+                emotionalInfo,
+                characterName,
+                tokenBudget * 2,
+                []
+            );
+        }
+
+        // Rebuild with truncated memories (inflate budget to avoid infinite recursion)
+        return formatContextForInjection(
+            truncatedMemories,
+            relationships,
+            emotionalInfo,
+            characterName,
+            tokenBudget * 2,
+            places
+        );
     }
 
     return result;

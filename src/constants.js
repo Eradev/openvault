@@ -12,6 +12,7 @@ export const METADATA_KEY = 'openvault';
 export const MEMORIES_KEY = 'memories';
 export const CHARACTERS_KEY = 'character_states';
 export const RELATIONSHIPS_KEY = 'relationships';
+export const PLACES_KEY = 'places';
 export const LAST_PROCESSED_KEY = 'last_processed_message_id';
 export const LAST_BATCH_KEY = 'last_extraction_batch';
 export const EXTRACTED_BATCHES_KEY = 'extracted_batches';

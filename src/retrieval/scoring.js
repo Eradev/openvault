@@ -96,14 +96,16 @@ async function callLLMForRetrieval(prompt) {
  * @param {string} characterName - POV character name
  * @param {string[]} activeCharacters - List of active characters
  * @param {number} limit - Maximum memories to return
+ * @param {string|null} [currentLocationId] - Current scene place id for location boost
  * @returns {Object[]} Selected memories
  */
-export function selectRelevantMemoriesSimple(memories, recentContext, characterName, activeCharacters, limit) {
+export function selectRelevantMemoriesSimple(memories, recentContext, characterName, activeCharacters, limit, currentLocationId = null) {
     // Simple relevance scoring based on:
     // 1. Importance (highest weight)
     // 2. Recency
     // 3. Character involvement
     // 4. Keyword matching
+    // 5. Same-location boost
 
     const scored = memories.map(memory => {
         let score = 0;
@@ -135,6 +137,12 @@ export function selectRelevantMemoriesSimple(memories, recentContext, characterN
         // Event type bonus
         if (memory.event_type === 'revelation') score += 3;
         if (memory.event_type === 'relationship_change') score += 2;
+        if (memory.event_type === 'place_change') score += 2;
+
+        // Same-location boost for current scene
+        if (currentLocationId && memory.location_id === currentLocationId) {
+            score += 8;
+        }
 
         return { memory, score };
     });
@@ -151,9 +159,10 @@ export function selectRelevantMemoriesSimple(memories, recentContext, characterN
  * @param {string} recentContext - Recent chat context
  * @param {string} characterName - POV character name
  * @param {number} limit - Maximum memories to select
+ * @param {string|null} [currentLocationName] - Current scene place name
  * @returns {Promise<Object[]>} - Selected memories
  */
-export async function selectRelevantMemoriesSmart(memories, recentContext, characterName, limit) {
+export async function selectRelevantMemoriesSmart(memories, recentContext, characterName, limit, currentLocationName = null) {
     if (memories.length === 0) return [];
     // If limit is -1 (no limit) or we have fewer memories than limit, return all
     if (limit < 0 || memories.length <= limit) return memories;
@@ -166,14 +175,19 @@ export async function selectRelevantMemoriesSmart(memories, recentContext, chara
         const importance = m.importance || 3;
         const importanceTag = `[\u2605${'\u2605'.repeat(importance - 1)}]`; // Show 1-5 stars
         const secretTag = m.is_secret ? '[Secret] ' : '';
-        return `${i + 1}. ${typeTag} ${importanceTag} ${secretTag}${m.summary}`;
+        const locationTag = m.location && m.location !== 'unknown' ? ` @ ${m.location}` : '';
+        return `${i + 1}. ${typeTag} ${importanceTag} ${secretTag}${m.summary}${locationTag}`;
     }).join('\n');
+
+    const locationHint = currentLocationName
+        ? `\nCurrent scene location: ${currentLocationName}. Prefer memories that happened here or establish this place when relevant.\n`
+        : '';
 
     const prompt = `You are a narrative memory analyzer. Given the current roleplay scene and a list of available memories, select which memories are most relevant for the AI to reference in its response.
 
 CURRENT SCENE:
 ${recentContext}
-
+${locationHint}
 AVAILABLE MEMORIES (numbered):
 ${numberedList}
 
@@ -181,6 +195,7 @@ ${numberedList}
 - Importance level (\u2605 to \u2605\u2605\u2605\u2605\u2605) - higher importance events are more critical to the story
 - Direct relevance to current conversation topics
 - Character relationships being discussed
+- Place / location continuity (what this room looks like, who works here)
 - Background context that explains current situations
 - Emotional continuity
 - Secrets the character knows
@@ -206,14 +221,14 @@ Only return valid JSON, no markdown formatting.`;
             parsed = JSON.parse(cleaned.trim());
         } catch (parseError) {
             log(`Smart retrieval: Failed to parse LLM response, falling back to simple mode. Error: ${parseError.message}`);
-            return selectRelevantMemoriesSimple(memories, recentContext, characterName, [], limit);
+            return selectRelevantMemoriesSimple(memories, recentContext, characterName, [], limit, null);
         }
 
         // Extract selected indices
         const selectedIndices = parsed.selected || [];
         if (!Array.isArray(selectedIndices) || selectedIndices.length === 0) {
             log('Smart retrieval: No memories selected by LLM, falling back to simple mode');
-            return selectRelevantMemoriesSimple(memories, recentContext, characterName, [], limit);
+            return selectRelevantMemoriesSimple(memories, recentContext, characterName, [], limit, null);
         }
 
         // Convert 1-indexed to 0-indexed and filter valid indices
@@ -223,14 +238,14 @@ Only return valid JSON, no markdown formatting.`;
 
         if (selectedMemories.length === 0) {
             log('Smart retrieval: Invalid indices from LLM, falling back to simple mode');
-            return selectRelevantMemoriesSimple(memories, recentContext, characterName, [], limit);
+            return selectRelevantMemoriesSimple(memories, recentContext, characterName, [], limit, null);
         }
 
         log(`Smart retrieval: LLM selected ${selectedMemories.length} memories. Reasoning: ${parsed.reasoning || 'none provided'}`);
         return selectedMemories;
     } catch (error) {
         log(`Smart retrieval error: ${error.message}, falling back to simple mode`);
-        return selectRelevantMemoriesSimple(memories, recentContext, characterName, [], limit);
+        return selectRelevantMemoriesSimple(memories, recentContext, characterName, [], limit, null);
     }
 }
 
@@ -242,14 +257,28 @@ Only return valid JSON, no markdown formatting.`;
  * @param {string} characterName - POV character name
  * @param {string[]} activeCharacters - List of active characters
  * @param {number} limit - Maximum memories to return
+ * @param {{ location_id?: string|null, location?: string|null }} [currentLocation] - Inferred scene location
  * @returns {Promise<Object[]>} Selected memories
  */
-export async function selectRelevantMemories(memories, recentContext, characterName, activeCharacters, limit) {
+export async function selectRelevantMemories(memories, recentContext, characterName, activeCharacters, limit, currentLocation = null) {
     const settings = extension_settings[extensionName];
 
     if (settings.smartRetrievalEnabled) {
-        return selectRelevantMemoriesSmart(memories, recentContext, characterName, limit);
+        return selectRelevantMemoriesSmart(
+            memories,
+            recentContext,
+            characterName,
+            limit,
+            currentLocation?.location || null
+        );
     } else {
-        return selectRelevantMemoriesSimple(memories, recentContext, characterName, activeCharacters, limit);
+        return selectRelevantMemoriesSimple(
+            memories,
+            recentContext,
+            characterName,
+            activeCharacters,
+            limit,
+            currentLocation?.location_id || null
+        );
     }
 }

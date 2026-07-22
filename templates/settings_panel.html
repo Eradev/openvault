@@ -116,6 +116,10 @@
                         <span class="openvault-stat-value" id="openvault_stat_relationships">--</span>
                         <span class="openvault-stat-label">Relationships</span>
                     </div>
+                    <div class="openvault-stat">
+                        <span class="openvault-stat-value" id="openvault_stat_places">--</span>
+                        <span class="openvault-stat-label">Places</span>
+                    </div>
                 </div>
                 <button id="openvault_refresh_stats_btn" class="menu_button">
                     <i class="fa-solid fa-refresh"></i> Refresh Stats
@@ -137,9 +141,13 @@
                                 <option value="revelation">Revelations</option>
                                 <option value="emotion_shift">Emotion Shifts</option>
                                 <option value="relationship_change">Relationship Changes</option>
+                                <option value="place_change">Place Changes</option>
                             </select>
                             <select id="openvault_filter_character" class="text_pole">
                                 <option value="">All Characters</option>
+                            </select>
+                            <select id="openvault_filter_location" class="text_pole">
+                                <option value="">All Locations</option>
                             </select>
                         </div>
                         <div id="openvault_memory_list" class="openvault-memory-list">
@@ -188,6 +196,21 @@
                 </div>
             </div>
 
+            <!-- Places (collapsed by default) -->
+            <div class="openvault-section">
+                <div class="inline-drawer">
+                    <div class="inline-drawer-toggle inline-drawer-header">
+                        <span>Places</span>
+                        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                    </div>
+                    <div class="inline-drawer-content">
+                        <div id="openvault_places" class="openvault-place-list">
+                            <p class="openvault-placeholder">No place data yet</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Debug -->
             <div class="openvault-section">
                 <label class="checkbox_label">
@@ -216,7 +239,7 @@
 
             <!-- Footer -->
             <div class="openvault-footer">
-                <small>OpenVault v0.2.0 - Free & Open Source Agentic Memory</small>
+                <small>OpenVault v0.4.0 - Free & Open Source Agentic Memory</small>
             </div>
         </div>
     </div>

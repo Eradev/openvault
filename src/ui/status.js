@@ -5,7 +5,7 @@
  */
 
 import { getOpenVaultData, log } from '../utils.js';
-import { MEMORIES_KEY, CHARACTERS_KEY, RELATIONSHIPS_KEY } from '../constants.js';
+import { MEMORIES_KEY, CHARACTERS_KEY, RELATIONSHIPS_KEY, PLACES_KEY } from '../constants.js';
 
 /**
  * Set the status indicator
@@ -35,12 +35,15 @@ export function refreshStats() {
         $('#openvault_stat_events').text(0);
         $('#openvault_stat_characters').text(0);
         $('#openvault_stat_relationships').text(0);
+        $('#openvault_stat_places').text(0);
         return;
     }
 
+    const placeCount = Object.keys(data[PLACES_KEY] || {}).length;
     $('#openvault_stat_events').text(data[MEMORIES_KEY]?.length || 0);
     $('#openvault_stat_characters').text(Object.keys(data[CHARACTERS_KEY] || {}).length);
     $('#openvault_stat_relationships').text(Object.keys(data[RELATIONSHIPS_KEY] || {}).length);
+    $('#openvault_stat_places').text(placeCount);
 
-    log(`Stats: ${data[MEMORIES_KEY]?.length || 0} memories, ${Object.keys(data[CHARACTERS_KEY] || {}).length} characters`);
+    log(`Stats: ${data[MEMORIES_KEY]?.length || 0} memories, ${Object.keys(data[CHARACTERS_KEY] || {}).length} characters, ${placeCount} places`);
 }

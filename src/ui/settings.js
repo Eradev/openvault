@@ -191,6 +191,7 @@ function bindUIElements() {
     // Memory browser filters
     $('#openvault_filter_type').on('change', () => resetAndRender());
     $('#openvault_filter_character').on('change', () => resetAndRender());
+    $('#openvault_filter_location').on('change', () => resetAndRender());
 }
 
 /**

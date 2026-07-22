@@ -7,7 +7,7 @@
 import { getContext } from '../../../../extensions.js';
 import { saveChatConditional, setExtensionPrompt, extension_prompt_types } from '../../../../../script.js';
 import { extension_settings } from '../../../../extensions.js';
-import { extensionName, METADATA_KEY, MEMORIES_KEY, CHARACTERS_KEY, RELATIONSHIPS_KEY, LAST_PROCESSED_KEY, EXTRACTED_BATCHES_KEY } from './constants.js';
+import { extensionName, METADATA_KEY, MEMORIES_KEY, CHARACTERS_KEY, RELATIONSHIPS_KEY, PLACES_KEY, LAST_PROCESSED_KEY, EXTRACTED_BATCHES_KEY } from './constants.js';
 
 /**
  * Whether a chat message is eligible for memory extraction.
@@ -140,11 +140,17 @@ export function getOpenVaultData() {
             [MEMORIES_KEY]: [],
             [CHARACTERS_KEY]: {},
             [RELATIONSHIPS_KEY]: {},
+            [PLACES_KEY]: {},
             [LAST_PROCESSED_KEY]: -1,
             [EXTRACTED_BATCHES_KEY]: [],
         };
     }
-    return context.chatMetadata[METADATA_KEY];
+    // Migrate older chats that predate places
+    const data = context.chatMetadata[METADATA_KEY];
+    if (!data[PLACES_KEY] || typeof data[PLACES_KEY] !== 'object') {
+        data[PLACES_KEY] = {};
+    }
+    return data;
 }
 
 /**

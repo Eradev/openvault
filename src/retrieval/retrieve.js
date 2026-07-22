@@ -6,12 +6,17 @@
 
 import { getContext, extension_settings } from '../../../../../extensions.js';
 import { getOpenVaultData, getCurrentChatId, safeSetExtensionPrompt, showToast, log } from '../utils.js';
-import { extensionName, MEMORIES_KEY, CHARACTERS_KEY, LAST_BATCH_KEY } from '../constants.js';
+import { extensionName, MEMORIES_KEY, CHARACTERS_KEY, PLACES_KEY, LAST_BATCH_KEY } from '../constants.js';
 import { setStatus } from '../ui/status.js';
 import { getActiveCharacters, getPOVContext } from '../pov.js';
 import { selectRelevantMemories } from './scoring.js';
 import { getRelationshipContext, formatContextForInjection } from './formatting.js';
 import { getCachedRetrieval, setCachedRetrieval, clearCachedRetrieval } from '../state.js';
+import {
+    filterPlacesByPOV,
+    inferCurrentLocation,
+    selectPlacesForInjection,
+} from '../places.js';
 
 /**
  * Build a cache key for the current retrieval turn.
@@ -200,13 +205,25 @@ export async function retrieveAndInjectContext() {
             .map(m => m.mes)
             .join('\n');
 
+        // Infer current scene location and POV-filter known places (strict — no meta-gaming)
+        const currentLocation = inferCurrentLocation(
+            memoriesToUse,
+            data[PLACES_KEY] || {},
+            recentMessages
+        );
+        const knownPlaces = filterPlacesByPOV(data[PLACES_KEY] || {}, povCharacters);
+        if (currentLocation.location) {
+            log(`Current location inferred: ${currentLocation.location} (${currentLocation.location_id || 'unresolved'})`);
+        }
+
         // Build retrieval prompt to select relevant memories
         const relevantMemories = await selectRelevantMemories(
             memoriesToUse,
             recentMessages,
             primaryCharacter,
             activeCharacters,
-            settings.maxMemoriesPerRetrieval
+            settings.maxMemoriesPerRetrieval,
+            currentLocation
         );
 
         if (!relevantMemories || relevantMemories.length === 0) {
@@ -217,6 +234,13 @@ export async function retrieveAndInjectContext() {
 
         // Get relationship context for the primary character
         const relationshipContext = getRelationshipContext(data, primaryCharacter, activeCharacters);
+
+        // Places: current (if known) + places referenced by selected memories
+        const placesForInjection = selectPlacesForInjection(
+            knownPlaces,
+            currentLocation.place,
+            relevantMemories
+        );
 
         // Get emotional state of primary character (with message range info)
         const primaryCharState = data[CHARACTERS_KEY]?.[primaryCharacter];
@@ -234,7 +258,8 @@ export async function retrieveAndInjectContext() {
             relationshipContext,
             emotionalInfo,
             headerName,
-            settings.tokenBudget
+            settings.tokenBudget,
+            placesForInjection
         );
 
         if (formattedContext) {
@@ -377,13 +402,21 @@ export async function updateInjection(pendingUserMessage = '') {
         log(`Including pending user message in retrieval context`);
     }
 
+    const currentLocation = inferCurrentLocation(
+        memoriesToUse,
+        data[PLACES_KEY] || {},
+        recentMessages
+    );
+    const knownPlaces = filterPlacesByPOV(data[PLACES_KEY] || {}, povCharacters);
+
     // Select relevant memories - uses smart retrieval if enabled in settings
     const relevantMemories = await selectRelevantMemories(
         memoriesToUse,
         recentMessages,
         primaryCharacter,
         activeCharacters,
-        settings.maxMemoriesPerRetrieval
+        settings.maxMemoriesPerRetrieval,
+        currentLocation
     );
 
     if (!relevantMemories || relevantMemories.length === 0) {
@@ -393,6 +426,11 @@ export async function updateInjection(pendingUserMessage = '') {
 
     // Get relationship and emotional context (with message range info)
     const relationshipContext = getRelationshipContext(data, primaryCharacter, activeCharacters);
+    const placesForInjection = selectPlacesForInjection(
+        knownPlaces,
+        currentLocation.place,
+        relevantMemories
+    );
     const primaryCharState = data[CHARACTERS_KEY]?.[primaryCharacter];
     const emotionalInfo = {
         emotion: primaryCharState?.current_emotion || 'neutral',
@@ -408,7 +446,8 @@ export async function updateInjection(pendingUserMessage = '') {
         relationshipContext,
         emotionalInfo,
         headerName,
-        settings.tokenBudget
+        settings.tokenBudget,
+        placesForInjection
     );
 
     if (formattedContext) {

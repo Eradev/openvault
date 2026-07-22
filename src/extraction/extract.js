@@ -8,11 +8,11 @@ import { getContext, extension_settings } from '../../../../../extensions.js';
 import { saveChatConditional } from '../../../../../../script.js';
 import { ConnectionManagerRequestService } from '../../../../shared.js';
 import { getOpenVaultData, saveOpenVaultData, showToast, log, isExtractableMessage, getTransientApiErrorMessage, isAbortError, isRateLimitError, safeSetExtensionPrompt } from '../utils.js';
-import { extensionName, MEMORIES_KEY, LAST_PROCESSED_KEY, LAST_BATCH_KEY, EXTRACTED_BATCHES_KEY } from '../constants.js';
+import { extensionName, MEMORIES_KEY, PLACES_KEY, LAST_PROCESSED_KEY, LAST_BATCH_KEY, EXTRACTED_BATCHES_KEY } from '../constants.js';
 import { setStatus } from '../ui/status.js';
 import { refreshAllUI } from '../ui/browser.js';
 import { buildExtractionPrompt } from './prompts.js';
-import { parseExtractionResult, updateCharacterStatesFromEvents, updateRelationshipsFromEvents } from './parser.js';
+import { parseExtractionResult, updateCharacterStatesFromEvents, updateRelationshipsFromEvents, updatePlacesFromEvents } from './parser.js';
 import { clearAllLocks, clearCachedRetrieval } from '../state.js';
 
 /**
@@ -182,7 +182,16 @@ export async function extractMemories(messageIds = null) {
         const memoryContextCount = settings.memoryContextCount || 0;
         const existingMemories = getRecentMemoriesForContext(memoryContextCount);
 
-        const extractionPrompt = buildExtractionPrompt(messagesText, characterName, userName, existingMemories, characterDescription, personaDescription);
+        const existingPlaces = data[PLACES_KEY] || {};
+        const extractionPrompt = buildExtractionPrompt(
+            messagesText,
+            characterName,
+            userName,
+            existingMemories,
+            characterDescription,
+            personaDescription,
+            existingPlaces
+        );
 
         // Call LLM for extraction
         const extractedJson = await callLLMForExtraction(extractionPrompt);
@@ -195,9 +204,10 @@ export async function extractMemories(messageIds = null) {
             data[MEMORIES_KEY] = data[MEMORIES_KEY] || [];
             data[MEMORIES_KEY].push(...events);
 
-            // Update character states and relationships
+            // Update character states, relationships, and places
             updateCharacterStatesFromEvents(events, data);
             updateRelationshipsFromEvents(events, data);
+            updatePlacesFromEvents(events, data);
 
             // Update last processed message ID
             const maxId = Math.max(...messagesToExtract.map(m => m.id));

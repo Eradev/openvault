@@ -2,18 +2,19 @@
 
 **Agentic Memory Extension for SillyTavern**
 
-OpenVault provides POV-aware memory with witness tracking, relationship dynamics, and emotional continuity for roleplay conversations. All data is stored locally in chat metadata - no external services required.
+OpenVault provides POV-aware memory with witness tracking, relationship dynamics, place profiles, and emotional continuity for roleplay conversations. All data is stored locally in chat metadata - no external services required.
 
 ## Features
 
-- **Automatic Memory Extraction**: Analyzes conversations to extract significant events, emotions, and relationship changes
+- **Automatic Memory Extraction**: Analyzes conversations to extract significant events, emotions, relationship changes, and place facts
 - **POV-Aware Retrieval**: Filters memories based on which characters witnessed events (no meta-gaming)
+- **Place Memories**: Tracks locations (appearance, occupants, features) with witness-gated knowledge
 - **Character Context**: Uses character card and persona descriptions for more accurate memory extraction
 - **Relationship Tracking**: Monitors and records relationship dynamics between characters
 - **Emotional Continuity**: Tracks emotional states and shifts across conversations
 - **Auto-Hide**: Automatically hides old messages from context while preserving their memories
 - **Smart Retrieval**: Optional LLM-powered selection of the most relevant memories
-- **Memory Browser**: View, filter, and manage extracted memories
+- **Memory Browser**: View, filter, and manage extracted memories, characters, relationships, and places
 - **Backfill**: Extract memories from existing chat history
 
 ## Installation
@@ -72,15 +73,17 @@ OpenVault sends recent messages to an LLM with:
 - Character descriptions (from character card)
 - Persona description (your character)
 - Existing memories (for consistency)
+- Known place names (to reuse canonical location names)
 
 The LLM extracts structured events with:
 
-- **Event type**: action, revelation, emotion_shift, relationship_change
+- **Event type**: action, revelation, emotion_shift, relationship_change, place_change
 - **Importance**: 1-5 scale
 - **Summary**: Brief description
 - **Characters involved**: Who participated
 - **Witnesses**: Who observed (for POV filtering)
 - **Location**: Where it happened
+- **Place facts**: Appearance, occupants/roles, and notable features (when relevant)
 - **Emotional/Relationship impact**: How characters were affected
 
 ### Memory Retrieval
@@ -89,7 +92,8 @@ Before the AI responds, OpenVault:
 
 1. Analyzes the current conversation context
 2. Finds relevant memories (filtered by POV/witnesses)
-3. Injects them as context within the token budget
+3. Infers the current scene location and boosts same-place memories
+4. Injects known places (witness-gated) plus selected memories within the token budget
 
 ### Auto-Hide
 
@@ -102,6 +106,7 @@ All data is stored in `chatMetadata.openvault`:
 - `memories`: Array of extracted memory events
 - `character_states`: Current emotional states per character
 - `relationships`: Relationship dynamics between characters
+- `places`: Place profiles (description, occupants, features, who knows them)
 
 Data is per-chat and persists with the chat file.
 
@@ -113,6 +118,7 @@ Data is per-chat and persists with the chat file.
 | **revelation** | New information revealed or discovered |
 | **emotion_shift** | Changes in emotional state |
 | **relationship_change** | Changes in how characters relate to each other |
+| **place_change** | Place appearance, layout, occupants, or notable features |
 
 ## Danger Zone
 
@@ -131,4 +137,4 @@ See [LICENSE](LICENSE) for details.
 
 ## Version
 
-v0.3.0
+v0.4.0
