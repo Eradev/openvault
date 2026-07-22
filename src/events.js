@@ -138,31 +138,54 @@ export async function onBeforeGeneration(type, options, dryRun = false) {
         if (settings.cacheRetrievalOnReroll && isRerollGenerationType(type)) {
             if (tryApplyCachedRetrieval(pendingUserMessage)) {
                 log(`>>> Using cached retrieval for ${type}`);
+                showToast('info', 'Using cached memory context', 'OpenVault', { timeOut: 1500 });
                 setStatus('ready');
                 return;
             }
             log(`>>> Cache miss on ${type} - running full retrieval`);
         }
 
-        // Show toast notification during retrieval
-        showToast('info', 'Retrieving memories...', 'OpenVault', { timeOut: 2000 });
+        // Persistent toast — smart retrieval can take a while and otherwise looks frozen
+        const retrievingLabel = settings.smartRetrievalEnabled
+            ? 'Fetching memory context (smart retrieval)...'
+            : 'Fetching memory context...';
+        showToast('info', retrievingLabel, 'OpenVault', {
+            timeOut: 0,
+            extendedTimeOut: 0,
+            tapToDismiss: false,
+            toastClass: 'toast openvault-retrieving-toast',
+        });
 
         // Do memory retrieval before generation
         log(`>>> Pre-generation retrieval starting (type: ${type}, message: "${pendingUserMessage.substring(0, 50)}...")`);
-        await withTimeout(
-            updateInjection(pendingUserMessage),
-            RETRIEVAL_TIMEOUT_MS,
-            'Memory retrieval'
-        );
-        log('>>> Pre-generation retrieval complete');
-
-        setStatus('ready');
+        try {
+            await withTimeout(
+                updateInjection(pendingUserMessage),
+                RETRIEVAL_TIMEOUT_MS,
+                'Memory retrieval'
+            );
+            log('>>> Pre-generation retrieval complete');
+            $('.openvault-retrieving-toast').remove();
+            showToast('success', 'Memory context ready', 'OpenVault', { timeOut: 1500 });
+            setStatus('ready');
+        } catch (retrievalError) {
+            $('.openvault-retrieving-toast').remove();
+            throw retrievalError;
+        }
     } catch (error) {
         console.error('OpenVault: Error during pre-generation retrieval:', error);
+        $('.openvault-retrieving-toast').remove();
+        const transientMessage = getTransientApiErrorMessage(error);
+        showToast(
+            transientMessage ? 'warning' : 'error',
+            transientMessage || `Memory retrieval failed: ${error?.message || 'Unknown error'}`,
+            'OpenVault'
+        );
         setStatus('error');
         // Don't block generation on retrieval failure
     } finally {
-        // Always clear retrieval flag
+        // Always clear retrieval flag and dismiss sticky toast
+        $('.openvault-retrieving-toast').remove();
         operationState.retrievalInProgress = false;
     }
 }

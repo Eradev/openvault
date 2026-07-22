@@ -135,6 +135,17 @@ export async function retrieveAndInjectContext() {
 
     setStatus('retrieving');
 
+    // Persistent toast while fetching (manual retrieve / smart selection can take a while)
+    const retrievingLabel = settings.smartRetrievalEnabled
+        ? 'Fetching memory context (smart retrieval)...'
+        : 'Fetching memory context...';
+    showToast('info', retrievingLabel, 'OpenVault', {
+        timeOut: 0,
+        extendedTimeOut: 0,
+        tapToDismiss: false,
+        toastClass: 'toast openvault-retrieving-toast',
+    });
+
     try {
         const userName = context.name1;
         const activeCharacters = getActiveCharacters();
@@ -231,15 +242,21 @@ export async function retrieveAndInjectContext() {
             const lastUserMessage = [...chat].reverse().find(m => m.is_user && !m.is_system);
             setCachedRetrieval(buildRetrievalCacheKey(lastUserMessage?.mes || ''), formattedContext);
             log(`Injected ${relevantMemories.length} memories into context`);
+            $('.openvault-retrieving-toast').remove();
             showToast('success', `Retrieved ${relevantMemories.length} relevant memories`);
+        } else {
+            $('.openvault-retrieving-toast').remove();
         }
 
         setStatus('ready');
         return { memories: relevantMemories, context: formattedContext };
     } catch (error) {
         console.error('[OpenVault] Retrieval error:', error);
+        $('.openvault-retrieving-toast').remove();
         setStatus('error');
         return null;
+    } finally {
+        $('.openvault-retrieving-toast').remove();
     }
 }
 
