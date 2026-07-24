@@ -209,14 +209,32 @@
     margin-top: 4px;
 }
 
-.openvault-memory-actions {
+.openvault-item-actions {
     margin-top: 6px;
     text-align: right;
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-wrap: wrap;
 }
 
-.openvault-memory-actions button {
+.openvault-item-actions button {
     font-size: 0.75em;
     padding: 2px 8px;
+}
+
+.openvault-edit-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 6px;
+    padding: 6px 8px;
+    resize: vertical;
+    font: inherit;
+    color: inherit;
+    background: var(--SmartThemeBlurTintColor, rgba(0,0,0,0.25));
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.15));
+    border-radius: 4px;
+    line-height: 1.35;
 }
 
 /* Pagination */

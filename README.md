@@ -14,7 +14,7 @@ OpenVault provides POV-aware memory with witness tracking, relationship dynamics
 - **Emotional Continuity**: Tracks emotional states and shifts across conversations
 - **Auto-Hide**: Automatically hides old messages from context while preserving their memories
 - **Smart Retrieval**: Optional LLM-powered selection of the most relevant memories
-- **Memory Browser**: View, filter, and manage extracted memories, characters, relationships, and places
+- **Memory Browser**: View, filter, edit, and manage extracted memories, characters, relationships, and places
 - **Backfill**: Extract memories from existing chat history
 
 ## Installation

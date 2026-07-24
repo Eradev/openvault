@@ -124,8 +124,11 @@ export function renderMemoryBrowser() {
                     <div class="openvault-memory-characters">${characters}</div>
                     ${location}
                     ${witnesses}
-                    <div class="openvault-memory-actions">
-                        <button class="menu_button openvault-delete-memory" data-id="${memory.id}">
+                    <div class="openvault-item-actions">
+                        <button class="menu_button openvault-edit-memory" data-id="${escapeHtml(memory.id)}">
+                            <i class="fa-solid fa-pen"></i> Edit
+                        </button>
+                        <button class="menu_button openvault-delete-memory" data-id="${escapeHtml(memory.id)}">
                             <i class="fa-solid fa-trash"></i> Delete
                         </button>
                     </div>
@@ -133,7 +136,10 @@ export function renderMemoryBrowser() {
             `);
         }
 
-        // Bind delete buttons
+        $list.find('.openvault-edit-memory').on('click', function() {
+            const $item = $(this).closest('.openvault-memory-item');
+            beginMemoryEdit($item, $(this).data('id'));
+        });
         $list.find('.openvault-delete-memory').on('click', async function() {
             const id = $(this).data('id');
             await deleteMemory(id);
@@ -167,6 +173,67 @@ async function deleteMemory(id) {
         refreshAllUI();
         showToast('success', 'Memory deleted');
     }
+}
+
+/**
+ * Switch a memory item into inline summary edit mode
+ * @param {JQuery} $item - Memory item element
+ * @param {string} id - Memory ID
+ */
+function beginMemoryEdit($item, id) {
+    const data = getOpenVaultData();
+    const memory = data?.[MEMORIES_KEY]?.find(m => m.id === id);
+    if (!memory || !$item.length) return;
+
+    const current = memory.summary || '';
+    $item.find('.openvault-memory-summary').replaceWith(
+        `<textarea class="openvault-edit-textarea openvault-memory-summary-edit" rows="3">${escapeHtml(current)}</textarea>`
+    );
+    $item.find('.openvault-item-actions').html(`
+        <button class="menu_button openvault-save-memory" data-id="${escapeHtml(id)}">
+            <i class="fa-solid fa-check"></i> Save
+        </button>
+        <button class="menu_button openvault-cancel-memory-edit">
+            <i class="fa-solid fa-xmark"></i> Cancel
+        </button>
+    `);
+
+    $item.find('.openvault-memory-summary-edit').trigger('focus');
+    $item.find('.openvault-save-memory').on('click', async function() {
+        const summary = $item.find('.openvault-memory-summary-edit').val();
+        await saveMemorySummary(id, summary);
+    });
+    $item.find('.openvault-cancel-memory-edit').on('click', () => renderMemoryBrowser());
+}
+
+/**
+ * Persist an edited memory summary
+ * @param {string} id - Memory ID
+ * @param {string} summary - New summary text
+ */
+async function saveMemorySummary(id, summary) {
+    const trimmed = (summary || '').trim();
+    if (!trimmed) {
+        showToast('warning', 'Summary cannot be empty');
+        return;
+    }
+
+    const data = getOpenVaultData();
+    if (!data) {
+        showToast('warning', 'No chat loaded');
+        return;
+    }
+
+    const memory = data[MEMORIES_KEY]?.find(m => m.id === id);
+    if (!memory) {
+        showToast('warning', 'Memory not found');
+        return;
+    }
+
+    memory.summary = trimmed;
+    await saveChatConditional();
+    refreshAllUI();
+    showToast('success', 'Memory updated');
 }
 
 /**
@@ -405,9 +472,75 @@ export function renderPlaces() {
                 ${occupants ? `<div class="openvault-place-occupants">${occupants}</div>` : ''}
                 ${features}
                 ${knownBy}
+                <div class="openvault-item-actions">
+                    <button class="menu_button openvault-edit-place" data-id="${escapeHtml(place.id)}">
+                        <i class="fa-solid fa-pen"></i> Edit
+                    </button>
+                </div>
             </div>
         `);
     }
+
+    $container.find('.openvault-edit-place').on('click', function() {
+        const $item = $(this).closest('.openvault-place-item');
+        beginPlaceEdit($item, $(this).data('id'));
+    });
+}
+
+/**
+ * Switch a place item into inline description edit mode
+ * @param {JQuery} $item - Place item element
+ * @param {string} id - Place ID
+ */
+function beginPlaceEdit($item, id) {
+    const data = getOpenVaultData();
+    const place = data?.[PLACES_KEY]?.[id];
+    if (!place || !$item.length) return;
+
+    const current = place.description || '';
+    $item.find('.openvault-place-description').replaceWith(
+        `<textarea class="openvault-edit-textarea openvault-place-description-edit" rows="3">${escapeHtml(current)}</textarea>`
+    );
+    $item.find('.openvault-item-actions').html(`
+        <button class="menu_button openvault-save-place" data-id="${escapeHtml(id)}">
+            <i class="fa-solid fa-check"></i> Save
+        </button>
+        <button class="menu_button openvault-cancel-place-edit">
+            <i class="fa-solid fa-xmark"></i> Cancel
+        </button>
+    `);
+
+    $item.find('.openvault-place-description-edit').trigger('focus');
+    $item.find('.openvault-save-place').on('click', async function() {
+        const description = $item.find('.openvault-place-description-edit').val();
+        await savePlaceDescription(id, description);
+    });
+    $item.find('.openvault-cancel-place-edit').on('click', () => renderPlaces());
+}
+
+/**
+ * Persist an edited place description
+ * @param {string} id - Place ID
+ * @param {string} description - New description text
+ */
+async function savePlaceDescription(id, description) {
+    const data = getOpenVaultData();
+    if (!data) {
+        showToast('warning', 'No chat loaded');
+        return;
+    }
+
+    const place = data[PLACES_KEY]?.[id];
+    if (!place) {
+        showToast('warning', 'Place not found');
+        return;
+    }
+
+    place.description = (description || '').trim();
+    place.last_updated = Date.now();
+    await saveChatConditional();
+    refreshAllUI();
+    showToast('success', 'Place updated');
 }
 
 /**
