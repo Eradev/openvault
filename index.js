@@ -129,15 +129,25 @@ jQuery(() => {
         try {
             const response = await fetch('/version');
             const version = await response.json();
-            const [major, minor] = version.pkgVersion.split('.').map(Number);
+            const detected = version.pkgVersion || 'unknown';
+            const [major, minor] = String(detected).split('.').map(Number);
+            const supported = major > 1 || (major === 1 && minor >= 13);
 
-            if (minor < 13) {
-                showToast('error', 'OpenVault requires SillyTavern 1.13.0 or later');
+            if (!supported) {
+                showToast(
+                    'error',
+                    `OpenVault requires SillyTavern 1.13.0+, detected ${detected} — please update SillyTavern`,
+                    'OpenVault',
+                    { timeOut: 0, extendedTimeOut: 0 }
+                );
                 return;
             }
         } catch (error) {
             console.error('[OpenVault] Failed to check SillyTavern version:', error);
-            showToast('error', 'OpenVault failed to verify SillyTavern version');
+            showToast('error', 'OpenVault failed to verify SillyTavern version', 'OpenVault', {
+                timeOut: 0,
+                extendedTimeOut: 0,
+            });
             return;
         }
 

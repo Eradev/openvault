@@ -13,6 +13,32 @@ export const operationState = {
     retrievalInProgress: false,
 };
 
+/** Count of in-flight OpenVault LLM requests (extract / smart retrieve) */
+let inFlightLlmRequests = 0;
+
+/**
+ * Whether any OpenVault LLM request is currently in flight
+ * @returns {boolean}
+ */
+export function hasInFlightLlmRequests() {
+    return inFlightLlmRequests > 0;
+}
+
+/**
+ * Wrap an LLM call so page-unload can warn while it is pending
+ * @template T
+ * @param {() => Promise<T>} fn
+ * @returns {Promise<T>}
+ */
+export async function trackLlmRequest(fn) {
+    inFlightLlmRequests++;
+    try {
+        return await fn();
+    } finally {
+        inFlightLlmRequests = Math.max(0, inFlightLlmRequests - 1);
+    }
+}
+
 // Generation lock timeout handle
 let generationLockTimeout = null;
 

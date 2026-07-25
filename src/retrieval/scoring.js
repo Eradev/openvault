@@ -8,6 +8,7 @@ import { getContext, extension_settings } from '../../../../../extensions.js';
 import { ConnectionManagerRequestService } from '../../../../shared.js';
 import { log, showToast, getTransientApiErrorMessage } from '../utils.js';
 import { extensionName } from '../constants.js';
+import { trackLlmRequest } from '../state.js';
 
 /**
  * Call LLM for retrieval using ConnectionManagerRequestService
@@ -49,7 +50,7 @@ async function callLLMForRetrieval(prompt) {
         ];
 
         // Send request via ConnectionManagerRequestService
-        const result = await ConnectionManagerRequestService.sendRequest(
+        const result = await trackLlmRequest(() => ConnectionManagerRequestService.sendRequest(
             profileId,
             messages,
             1000, // max tokens (retrieval needs less than extraction)
@@ -59,7 +60,7 @@ async function callLLMForRetrieval(prompt) {
                 stream: false
             },
             {} // override payload
-        );
+        ));
 
         // Extract content from response
         const content = result?.content || result || '';

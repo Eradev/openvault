@@ -14,7 +14,7 @@ import { refreshAllUI } from '../ui/browser.js';
 import { buildExtractionPrompt } from './prompts.js';
 import { parseExtractionResult, sanitizeEventsAgainstBlacklist, updateCharacterStatesFromEvents, updateRelationshipsFromEvents, updatePlacesFromEvents } from './parser.js';
 import { getBlacklistedNames } from '../blacklist.js';
-import { clearAllLocks, clearCachedRetrieval } from '../state.js';
+import { clearAllLocks, clearCachedRetrieval, trackLlmRequest } from '../state.js';
 
 /**
  * Get recent memories for context during extraction
@@ -77,7 +77,7 @@ export async function callLLMForExtraction(prompt) {
     ];
 
     // Send request via ConnectionManagerRequestService
-    const result = await ConnectionManagerRequestService.sendRequest(
+    const result = await trackLlmRequest(() => ConnectionManagerRequestService.sendRequest(
         profileId,
         messages,
         2000, // max tokens
@@ -87,7 +87,7 @@ export async function callLLMForExtraction(prompt) {
             stream: false
         },
         {} // override payload
-    );
+    ));
 
     // Extract content from response
     const content = result?.content || result || '';

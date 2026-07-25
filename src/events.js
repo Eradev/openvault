@@ -8,7 +8,7 @@ import { eventSource, event_types, saveChatConditional } from '../../../../../sc
 import { getContext, extension_settings } from '../../../../extensions.js';
 import { getOpenVaultData, getCurrentChatId, saveOpenVaultData, showToast, safeSetExtensionPrompt, withTimeout, log, getExtractableMessages, getTransientApiErrorMessage } from './utils.js';
 import { extensionName, MEMORIES_KEY, EXTRACTED_BATCHES_KEY, LAST_PROCESSED_KEY, RETRIEVAL_TIMEOUT_MS, EXTRACTION_DELAY_MS } from './constants.js';
-import { operationState, setGenerationLock, clearGenerationLock, isChatLoadingCooldown, setChatLoadingCooldown, resetOperationStatesIfSafe, isRerollGenerationType, clearCachedRetrieval } from './state.js';
+import { operationState, setGenerationLock, clearGenerationLock, isChatLoadingCooldown, setChatLoadingCooldown, resetOperationStatesIfSafe, isRerollGenerationType, clearCachedRetrieval, hasInFlightLlmRequests } from './state.js';
 import { setStatus } from './ui/status.js';
 import { refreshAllUI, resetMemoryBrowserPage } from './ui/browser.js';
 import { extractMemories } from './extraction/extract.js';
@@ -397,11 +397,36 @@ export async function onMessageReceived(messageId) {
 }
 
 /**
+ * Warn on page unload while an OpenVault LLM request is in flight
+ * (reload/close mid-request can abort ST's upstream fetch).
+ * @param {BeforeUnloadEvent} e
+ */
+function onBeforeUnload(e) {
+    if (!hasInFlightLlmRequests()) return;
+    e.preventDefault();
+    e.returnValue = '';
+    return '';
+}
+
+let beforeUnloadRegistered = false;
+
+/**
+ * Register beforeunload once for in-flight LLM request warnings
+ */
+function ensureBeforeUnloadHandler() {
+    if (beforeUnloadRegistered) return;
+    window.addEventListener('beforeunload', onBeforeUnload);
+    beforeUnloadRegistered = true;
+}
+
+/**
  * Update event listeners based on settings
  * @param {boolean} skipInitialization - If true, skip the initial injection
  */
 export function updateEventListeners(skipInitialization = false) {
     const settings = extension_settings[extensionName];
+
+    ensureBeforeUnloadHandler();
 
     // Remove old event listeners first to prevent duplicates
     eventSource.removeListener(event_types.GENERATION_AFTER_COMMANDS, onBeforeGeneration);
