@@ -203,12 +203,17 @@ export function onGenerationEnded() {
  */
 export function onChatChanged() {
     const settings = extension_settings[extensionName];
+
+    // Always refresh browser UI when enabled (blacklist is per character card)
+    if (settings.enabled) {
+        resetMemoryBrowserPage();
+        refreshAllUI();
+        setStatus('ready');
+    }
+
     if (!settings.enabled || !settings.automaticMode) return;
 
     log('Chat changed, clearing injection and setting load cooldown');
-
-    // Reset memoryBrowserPage to prevent showing wrong page after chat switch
-    resetMemoryBrowserPage();
 
     // Set cooldown to prevent MESSAGE_RECEIVED from triggering extraction during chat load
     setChatLoadingCooldown(2000, log);
@@ -219,10 +224,6 @@ export function onChatChanged() {
     // Clear current injection and retrieval cache - refreshed in onBeforeGeneration
     clearCachedRetrieval();
     safeSetExtensionPrompt('');
-
-    // Refresh UI on chat change
-    refreshAllUI();
-    setStatus('ready');
 }
 
 /**

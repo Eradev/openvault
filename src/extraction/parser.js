@@ -7,6 +7,7 @@
 import { generateId, log } from '../utils.js';
 import { CHARACTERS_KEY, RELATIONSHIPS_KEY } from '../constants.js';
 import { isUnknownLocation, resolveLocation, upsertPlaceFromFacts } from '../places.js';
+import { getBlacklistSet, normalizeBlacklistName } from '../blacklist.js';
 
 /**
  * Collect characters who should know place facts from an event (witness-gated).
@@ -25,6 +26,67 @@ function getPlaceKnowers(event) {
         }
     }
     return Array.from(knowers);
+}
+
+/**
+ * Strip blacklisted names from parsed events before state/relationship/place updates.
+ * Keeps the memory; only removes the denylisted entity from involvement fields.
+ * @param {Array} events
+ * @param {string[]} [blacklistedNames]
+ * @returns {Array} The same events array (mutated)
+ */
+export function sanitizeEventsAgainstBlacklist(events, blacklistedNames = null) {
+    const blocked = getBlacklistSet(blacklistedNames);
+    if (!events?.length || blocked.size === 0) return events || [];
+
+    for (const event of events) {
+        event.characters_involved = (event.characters_involved || [])
+            .filter(n => n && !blocked.has(normalizeBlacklistName(n)));
+        event.witnesses = (event.witnesses || [])
+            .filter(n => n && !blocked.has(normalizeBlacklistName(n)));
+
+        if (event.emotional_impact && typeof event.emotional_impact === 'object') {
+            const cleaned = {};
+            for (const [charName, emotion] of Object.entries(event.emotional_impact)) {
+                if (!blocked.has(normalizeBlacklistName(charName))) {
+                    cleaned[charName] = emotion;
+                }
+            }
+            event.emotional_impact = cleaned;
+        }
+
+        if (event.relationship_impact && typeof event.relationship_impact === 'object') {
+            const cleaned = {};
+            for (const [relationKey, impact] of Object.entries(event.relationship_impact)) {
+                const match = String(relationKey).match(/^(.+?)\s*->\s*(.+)$/);
+                if (match) {
+                    const [, charA, charB] = match;
+                    if (
+                        blocked.has(normalizeBlacklistName(charA)) ||
+                        blocked.has(normalizeBlacklistName(charB))
+                    ) {
+                        continue;
+                    }
+                } else if (blocked.has(normalizeBlacklistName(relationKey))) {
+                    continue;
+                }
+                cleaned[relationKey] = impact;
+            }
+            event.relationship_impact = cleaned;
+        }
+
+        if (event.place_facts?.occupants && typeof event.place_facts.occupants === 'object') {
+            const cleaned = {};
+            for (const [charName, role] of Object.entries(event.place_facts.occupants)) {
+                if (!blocked.has(normalizeBlacklistName(charName))) {
+                    cleaned[charName] = role;
+                }
+            }
+            event.place_facts.occupants = cleaned;
+        }
+    }
+
+    return events;
 }
 
 /**
@@ -88,9 +150,11 @@ export function parseExtractionResult(jsonString, messages, characterName, userN
  * Update character states based on extracted events
  * @param {Array} events - Extracted events
  * @param {Object} data - OpenVault data object
+ * @param {string[]} [blacklistedNames] - Optional preloaded blacklist
  */
-export function updateCharacterStatesFromEvents(events, data) {
+export function updateCharacterStatesFromEvents(events, data, blacklistedNames = null) {
     data[CHARACTERS_KEY] = data[CHARACTERS_KEY] || {};
+    const blocked = getBlacklistSet(blacklistedNames);
 
     for (const event of events) {
         // Get message range for this event
@@ -102,6 +166,8 @@ export function updateCharacterStatesFromEvents(events, data) {
         // Update emotional impact
         if (event.emotional_impact) {
             for (const [charName, emotion] of Object.entries(event.emotional_impact)) {
+                if (blocked.has(normalizeBlacklistName(charName))) continue;
+
                 if (!data[CHARACTERS_KEY][charName]) {
                     data[CHARACTERS_KEY][charName] = {
                         name: charName,
@@ -122,6 +188,8 @@ export function updateCharacterStatesFromEvents(events, data) {
 
         // Add event to witnesses' knowledge
         for (const witness of (event.witnesses || [])) {
+            if (blocked.has(normalizeBlacklistName(witness))) continue;
+
             if (!data[CHARACTERS_KEY][witness]) {
                 data[CHARACTERS_KEY][witness] = {
                     name: witness,
@@ -141,9 +209,11 @@ export function updateCharacterStatesFromEvents(events, data) {
  * Update relationships based on extracted events
  * @param {Array} events - Extracted events
  * @param {Object} data - OpenVault data object
+ * @param {string[]} [blacklistedNames] - Optional preloaded blacklist
  */
-export function updateRelationshipsFromEvents(events, data) {
+export function updateRelationshipsFromEvents(events, data, blacklistedNames = null) {
     data[RELATIONSHIPS_KEY] = data[RELATIONSHIPS_KEY] || {};
+    const blocked = getBlacklistSet(blacklistedNames);
 
     for (const event of events) {
         if (event.relationship_impact) {
@@ -153,6 +223,13 @@ export function updateRelationshipsFromEvents(events, data) {
                 if (!match) continue;
 
                 const [, charA, charB] = match;
+                if (
+                    blocked.has(normalizeBlacklistName(charA)) ||
+                    blocked.has(normalizeBlacklistName(charB))
+                ) {
+                    continue;
+                }
+
                 const key = `${charA}<->${charB}`;
 
                 if (!data[RELATIONSHIPS_KEY][key]) {

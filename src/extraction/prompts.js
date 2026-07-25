@@ -40,9 +40,10 @@ ${lines}
  * @param {string} characterDescription - Character card description (optional)
  * @param {string} personaDescription - User persona description (optional)
  * @param {Object} existingPlaces - Known places map (optional)
+ * @param {string[]} blacklistedNames - Names that must not be treated as characters (optional)
  * @returns {string} The extraction prompt
  */
-export function buildExtractionPrompt(messagesText, characterName, userName, existingMemories = [], characterDescription = '', personaDescription = '', existingPlaces = {}) {
+export function buildExtractionPrompt(messagesText, characterName, userName, existingMemories = [], characterDescription = '', personaDescription = '', existingPlaces = {}, blacklistedNames = []) {
     // Build character context section if we have descriptions
     let characterContextSection = '';
     if (characterDescription || personaDescription) {
@@ -77,12 +78,25 @@ ${memorySummaries}
 
     const placesContextSection = formatKnownPlacesSection(existingPlaces);
 
+    let blacklistSection = '';
+    if (Array.isArray(blacklistedNames) && blacklistedNames.length > 0) {
+        const list = blacklistedNames.map(n => `- ${n}`).join('\n');
+        blacklistSection = `
+## Blacklisted Names (Do Not Treat as Characters)
+These labels are collectives, narrators, or non-characters. Never use them in characters_involved, witnesses, emotional_impact, relationship_impact, or place occupants.
+Attribute involvement, emotions, and relationships to the individual characters present in the scene instead.
+
+${list}
+
+`;
+    }
+
     return `You are analyzing roleplay messages to extract structured memory events.
 
 ## Characters
 - Main character: ${characterName}
 - User's character: ${userName}
-${characterContextSection}${memoryContextSection}${placesContextSection}
+${characterContextSection}${memoryContextSection}${placesContextSection}${blacklistSection}
 ## Messages to analyze:
 ${messagesText}
 

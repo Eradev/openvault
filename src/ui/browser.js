@@ -8,6 +8,13 @@ import { saveChatConditional } from '../../../../../../script.js';
 import { getOpenVaultData, escapeHtml, showToast } from '../utils.js';
 import { MEMORIES_KEY, CHARACTERS_KEY, RELATIONSHIPS_KEY, PLACES_KEY, MEMORIES_PER_PAGE } from '../constants.js';
 import { isUnknownLocation } from '../places.js';
+import {
+    getBlacklistedNames,
+    canEditBlacklist,
+    addBlacklistedName,
+    removeBlacklistedName,
+    normalizeBlacklistName,
+} from '../blacklist.js';
 import { refreshStats } from './status.js';
 
 // Pagination state for memory browser
@@ -320,11 +327,24 @@ export function populateLocationFilter() {
 }
 
 /**
- * Render character states
+ * Render character states and card blacklist
  */
 export function renderCharacterStates() {
     const data = getOpenVaultData();
     const $container = $('#openvault_character_states');
+    const editable = canEditBlacklist();
+    const blacklisted = getBlacklistedNames();
+    const blacklistedLower = new Set(blacklisted.map(normalizeBlacklistName));
+
+    // Type-add controls
+    $('#openvault_blacklist_input').prop('disabled', !editable);
+    $('#openvault_blacklist_add_btn').prop('disabled', !editable);
+    $('#openvault_blacklist_hint').text(
+        editable
+            ? 'Blacklisted names will not receive states, relationships, or memory involvement.'
+            : 'Load a character card to manage the blacklist.'
+    );
+
     if (!data) {
         $container.html('<p class="openvault-placeholder">No chat loaded</p>');
         return;
@@ -333,13 +353,15 @@ export function renderCharacterStates() {
 
     $container.empty();
 
-    const charNames = Object.keys(characters);
-    if (charNames.length === 0) {
+    const charNames = Object.keys(characters).sort();
+    if (charNames.length === 0 && blacklisted.length === 0) {
         $container.html('<p class="openvault-placeholder">No character data yet</p>');
         return;
     }
 
-    for (const name of charNames.sort()) {
+    for (const name of charNames) {
+        if (blacklistedLower.has(normalizeBlacklistName(name))) continue;
+
         const char = characters[name];
         const emotion = char.current_emotion || 'neutral';
         const intensity = char.emotion_intensity || 5;
@@ -354,9 +376,18 @@ export function renderCharacterStates() {
                 : ` (msgs ${min}-${max})`;
         }
 
+        const blacklistBtn = editable
+            ? `<button class="menu_button openvault-blacklist-btn" data-name="${escapeHtml(name)}" title="Blacklist this name">
+                    <i class="fa-solid fa-ban"></i>
+               </button>`
+            : '';
+
         $container.append(`
             <div class="openvault-character-item">
-                <div class="openvault-character-name">${escapeHtml(name)}</div>
+                <div class="openvault-character-header">
+                    <div class="openvault-character-name">${escapeHtml(name)}</div>
+                    ${blacklistBtn}
+                </div>
                 <div class="openvault-emotion">
                     <span class="openvault-emotion-label">${escapeHtml(emotion)}${emotionSource}</span>
                     <div class="openvault-emotion-bar">
@@ -367,6 +398,68 @@ export function renderCharacterStates() {
             </div>
         `);
     }
+
+    if (blacklisted.length > 0) {
+        $container.append('<div class="openvault-blacklist-section-title">Blacklisted</div>');
+        for (const name of [...blacklisted].sort((a, b) => a.localeCompare(b))) {
+            const removeBtn = editable
+                ? `<button class="menu_button openvault-unblacklist-btn" data-name="${escapeHtml(name)}" title="Remove from blacklist">
+                        <i class="fa-solid fa-xmark"></i>
+                   </button>`
+                : '';
+            $container.append(`
+                <div class="openvault-character-item openvault-blacklisted-item">
+                    <div class="openvault-character-header">
+                        <div class="openvault-character-name">${escapeHtml(name)}</div>
+                        ${removeBtn}
+                    </div>
+                    <div class="openvault-memory-witnesses">Excluded from states, relationships, and involvement</div>
+                </div>
+            `);
+        }
+    }
+
+    $container.find('.openvault-blacklist-btn').on('click', async function() {
+        const name = $(this).attr('data-name');
+        if (!name) return;
+        if (!confirm(`Blacklist "${name}" on this character card?\n\nExisting states/relationships for this name will be removed from the current chat. Memories stay, but this name will be stripped from them.`)) {
+            return;
+        }
+        const ok = await addBlacklistedName(name);
+        if (ok) refreshAllUI();
+    });
+
+    $container.find('.openvault-unblacklist-btn').on('click', async function() {
+        const name = $(this).attr('data-name');
+        if (!name) return;
+        const ok = await removeBlacklistedName(name);
+        if (ok) refreshAllUI();
+    });
+}
+
+/**
+ * Bind one-time handlers for the blacklist type-add controls
+ */
+export function bindBlacklistUI() {
+    $('#openvault_blacklist_add_btn').off('click.openvault').on('click.openvault', async () => {
+        const name = $('#openvault_blacklist_input').val();
+        const ok = await addBlacklistedName(name);
+        if (ok) {
+            $('#openvault_blacklist_input').val('');
+            refreshAllUI();
+        }
+    });
+
+    $('#openvault_blacklist_input').off('keydown.openvault').on('keydown.openvault', async (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        const name = $('#openvault_blacklist_input').val();
+        const ok = await addBlacklistedName(name);
+        if (ok) {
+            $('#openvault_blacklist_input').val('');
+            refreshAllUI();
+        }
+    });
 }
 
 /**

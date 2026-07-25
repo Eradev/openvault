@@ -7,7 +7,7 @@
 import { saveSettingsDebounced } from '../../../../../../script.js';
 import { extension_settings } from '../../../../../extensions.js';
 import { extensionName, extensionFolderPath, defaultSettings } from '../constants.js';
-import { refreshAllUI, renderMemoryBrowser, prevPage, nextPage, resetAndRender } from './browser.js';
+import { refreshAllUI, renderMemoryBrowser, prevPage, nextPage, resetAndRender, bindBlacklistUI } from './browser.js';
 
 // References to external functions (set during init)
 let updateEventListenersFn = null;
@@ -192,6 +192,9 @@ function bindUIElements() {
     $('#openvault_filter_type').on('change', () => resetAndRender());
     $('#openvault_filter_character').on('change', () => resetAndRender());
     $('#openvault_filter_location').on('change', () => resetAndRender());
+
+    // Character blacklist type-add
+    bindBlacklistUI();
 }
 
 /**

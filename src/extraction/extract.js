@@ -12,7 +12,8 @@ import { extensionName, MEMORIES_KEY, PLACES_KEY, LAST_PROCESSED_KEY, LAST_BATCH
 import { setStatus } from '../ui/status.js';
 import { refreshAllUI } from '../ui/browser.js';
 import { buildExtractionPrompt } from './prompts.js';
-import { parseExtractionResult, updateCharacterStatesFromEvents, updateRelationshipsFromEvents, updatePlacesFromEvents } from './parser.js';
+import { parseExtractionResult, sanitizeEventsAgainstBlacklist, updateCharacterStatesFromEvents, updateRelationshipsFromEvents, updatePlacesFromEvents } from './parser.js';
+import { getBlacklistedNames } from '../blacklist.js';
 import { clearAllLocks, clearCachedRetrieval } from '../state.js';
 
 /**
@@ -183,6 +184,7 @@ export async function extractMemories(messageIds = null) {
         const existingMemories = getRecentMemoriesForContext(memoryContextCount);
 
         const existingPlaces = data[PLACES_KEY] || {};
+        const blacklistedNames = getBlacklistedNames(context);
         const extractionPrompt = buildExtractionPrompt(
             messagesText,
             characterName,
@@ -190,7 +192,8 @@ export async function extractMemories(messageIds = null) {
             existingMemories,
             characterDescription,
             personaDescription,
-            existingPlaces
+            existingPlaces,
+            blacklistedNames
         );
 
         // Call LLM for extraction
@@ -198,6 +201,7 @@ export async function extractMemories(messageIds = null) {
 
         // Parse and store extracted events
         const events = parseExtractionResult(extractedJson, messagesToExtract, characterName, userName, batchId);
+        sanitizeEventsAgainstBlacklist(events, blacklistedNames);
 
         if (events.length > 0) {
             // Add events to storage
@@ -205,8 +209,8 @@ export async function extractMemories(messageIds = null) {
             data[MEMORIES_KEY].push(...events);
 
             // Update character states, relationships, and places
-            updateCharacterStatesFromEvents(events, data);
-            updateRelationshipsFromEvents(events, data);
+            updateCharacterStatesFromEvents(events, data, blacklistedNames);
+            updateRelationshipsFromEvents(events, data, blacklistedNames);
             updatePlacesFromEvents(events, data);
 
             // Update last processed message ID
