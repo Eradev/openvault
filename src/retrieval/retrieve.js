@@ -9,7 +9,7 @@ import { getOpenVaultData, getCurrentChatId, safeSetExtensionPrompt, showToast, 
 import { extensionName, MEMORIES_KEY, CHARACTERS_KEY, PLACES_KEY, LAST_BATCH_KEY } from '../constants.js';
 import { setStatus } from '../ui/status.js';
 import { getActiveCharacters, getPOVContext } from '../pov.js';
-import { selectRelevantMemories } from './scoring.js';
+import { selectRelevantMemories, getCharacterProfileCandidates } from './scoring.js';
 import { getRelationshipContext, formatContextForInjection } from './formatting.js';
 import { getCachedRetrieval, setCachedRetrieval, clearCachedRetrieval } from '../state.js';
 import {
@@ -132,9 +132,13 @@ export async function retrieveAndInjectContext() {
         return null;
     }
     const memories = data[MEMORIES_KEY] || [];
+    const characterCandidatesEarly = getCharacterProfileCandidates(
+        data[CHARACTERS_KEY] || {},
+        getActiveCharacters()
+    );
 
-    if (memories.length === 0) {
-        log('No memories stored yet');
+    if (memories.length === 0 && characterCandidatesEarly.length === 0) {
+        log('No memories or character profiles stored yet');
         return null;
     }
 
@@ -190,12 +194,6 @@ export async function retrieveAndInjectContext() {
             memoriesToUse = memories;
         }
 
-        if (memoriesToUse.length === 0) {
-            log('No memories available');
-            setStatus('ready');
-            return null;
-        }
-
         // Use first POV character for formatting (or main character for narrator mode)
         const primaryCharacter = isGroupChat ? povCharacters[0] : context.name2;
 
@@ -216,18 +214,26 @@ export async function retrieveAndInjectContext() {
             log(`Current location inferred: ${currentLocation.location} (${currentLocation.location_id || 'unresolved'})`);
         }
 
-        // Build retrieval prompt to select relevant memories
-        const relevantMemories = await selectRelevantMemories(
+        const characterCandidates = getCharacterProfileCandidates(
+            data[CHARACTERS_KEY] || {},
+            activeCharacters
+        );
+
+        // Select relevant memories + optional character profiles (shared slots)
+        const selection = await selectRelevantMemories(
             memoriesToUse,
             recentMessages,
             primaryCharacter,
             activeCharacters,
             settings.maxMemoriesPerRetrieval,
-            currentLocation
+            currentLocation,
+            characterCandidates
         );
+        const relevantMemories = selection?.memories || [];
+        const selectedCharacters = selection?.characters || [];
 
-        if (!relevantMemories || relevantMemories.length === 0) {
-            log('No relevant memories found');
+        if (relevantMemories.length === 0 && selectedCharacters.length === 0) {
+            log('No relevant memories or character profiles found');
             setStatus('ready');
             return null;
         }
@@ -259,22 +265,26 @@ export async function retrieveAndInjectContext() {
             emotionalInfo,
             headerName,
             settings.tokenBudget,
-            placesForInjection
+            placesForInjection,
+            selectedCharacters
         );
 
         if (formattedContext) {
             injectContext(formattedContext);
             const lastUserMessage = [...chat].reverse().find(m => m.is_user && !m.is_system);
             setCachedRetrieval(buildRetrievalCacheKey(lastUserMessage?.mes || ''), formattedContext);
-            log(`Injected ${relevantMemories.length} memories into context`);
+            log(`Injected ${relevantMemories.length} memories + ${selectedCharacters.length} character profiles into context`);
             $('.openvault-retrieving-toast').remove();
-            showToast('success', `Retrieved ${relevantMemories.length} relevant memories`);
+            const parts = [];
+            if (relevantMemories.length) parts.push(`${relevantMemories.length} memories`);
+            if (selectedCharacters.length) parts.push(`${selectedCharacters.length} characters`);
+            showToast('success', `Retrieved ${parts.join(' + ')}`);
         } else {
             $('.openvault-retrieving-toast').remove();
         }
 
         setStatus('ready');
-        return { memories: relevantMemories, context: formattedContext };
+        return { memories: relevantMemories, characters: selectedCharacters, context: formattedContext };
     } catch (error) {
         console.error('[OpenVault] Retrieval error:', error);
         $('.openvault-retrieving-toast').remove();
@@ -314,14 +324,17 @@ export async function updateInjection(pendingUserMessage = '') {
         return;
     }
     const memories = data[MEMORIES_KEY] || [];
+    const activeCharacters = getActiveCharacters();
+    const characterCandidatesEarly = getCharacterProfileCandidates(
+        data[CHARACTERS_KEY] || {},
+        activeCharacters
+    );
 
-    if (memories.length === 0) {
+    if (memories.length === 0 && characterCandidatesEarly.length === 0) {
         clearCachedRetrieval();
         safeSetExtensionPrompt('');
         return;
     }
-
-    const activeCharacters = getActiveCharacters();
 
     // Get POV context (different behavior for group chat vs narrator mode)
     const { povCharacters, isGroupChat } = getPOVContext();
@@ -382,11 +395,6 @@ export async function updateInjection(pendingUserMessage = '') {
         memoriesToUse = memories;
     }
 
-    if (memoriesToUse.length === 0) {
-        injectContext('');
-        return;
-    }
-
     // Use first POV character for formatting (or context name for narrator mode)
     const primaryCharacter = isGroupChat ? povCharacters[0] : context.name2;
 
@@ -409,17 +417,25 @@ export async function updateInjection(pendingUserMessage = '') {
     );
     const knownPlaces = filterPlacesByPOV(data[PLACES_KEY] || {}, povCharacters);
 
-    // Select relevant memories - uses smart retrieval if enabled in settings
-    const relevantMemories = await selectRelevantMemories(
+    const characterCandidates = getCharacterProfileCandidates(
+        data[CHARACTERS_KEY] || {},
+        activeCharacters
+    );
+
+    // Select relevant memories + optional character profiles (shared slots)
+    const selection = await selectRelevantMemories(
         memoriesToUse,
         recentMessages,
         primaryCharacter,
         activeCharacters,
         settings.maxMemoriesPerRetrieval,
-        currentLocation
+        currentLocation,
+        characterCandidates
     );
+    const relevantMemories = selection?.memories || [];
+    const selectedCharacters = selection?.characters || [];
 
-    if (!relevantMemories || relevantMemories.length === 0) {
+    if (relevantMemories.length === 0 && selectedCharacters.length === 0) {
         injectContext('');
         return;
     }
@@ -447,12 +463,13 @@ export async function updateInjection(pendingUserMessage = '') {
         emotionalInfo,
         headerName,
         settings.tokenBudget,
-        placesForInjection
+        placesForInjection,
+        selectedCharacters
     );
 
     if (formattedContext) {
         injectContext(formattedContext);
         setCachedRetrieval(buildRetrievalCacheKey(pendingUserMessage), formattedContext);
-        log(`Injection updated: ${relevantMemories.length} memories`);
+        log(`Injection updated: ${relevantMemories.length} memories + ${selectedCharacters.length} character profiles`);
     }
 }

@@ -8,7 +8,7 @@ import { getContext, extension_settings } from '../../../../../extensions.js';
 import { saveChatConditional } from '../../../../../../script.js';
 import { ConnectionManagerRequestService } from '../../../../shared.js';
 import { getOpenVaultData, saveOpenVaultData, showToast, log, isExtractableMessage, getTransientApiErrorMessage, isAbortError, isRateLimitError, safeSetExtensionPrompt } from '../utils.js';
-import { extensionName, MEMORIES_KEY, PLACES_KEY, LAST_PROCESSED_KEY, LAST_BATCH_KEY, EXTRACTED_BATCHES_KEY } from '../constants.js';
+import { extensionName, MEMORIES_KEY, CHARACTERS_KEY, PLACES_KEY, LAST_PROCESSED_KEY, LAST_BATCH_KEY, EXTRACTED_BATCHES_KEY } from '../constants.js';
 import { setStatus } from '../ui/status.js';
 import { refreshAllUI } from '../ui/browser.js';
 import { buildExtractionPrompt } from './prompts.js';
@@ -184,6 +184,7 @@ export async function extractMemories(messageIds = null) {
         const existingMemories = getRecentMemoriesForContext(memoryContextCount);
 
         const existingPlaces = data[PLACES_KEY] || {};
+        const existingCharacters = data[CHARACTERS_KEY] || {};
         const blacklistedNames = getBlacklistedNames(context);
         const extractionPrompt = buildExtractionPrompt(
             messagesText,
@@ -193,7 +194,8 @@ export async function extractMemories(messageIds = null) {
             characterDescription,
             personaDescription,
             existingPlaces,
-            blacklistedNames
+            blacklistedNames,
+            existingCharacters
         );
 
         // Call LLM for extraction

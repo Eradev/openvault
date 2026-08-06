@@ -227,6 +227,14 @@ export async function scrubBlacklistedNameFromChat(name) {
         if (namesMatchInsensitive(key, trimmed) || namesMatchInsensitive(states[key]?.name, trimmed)) {
             delete states[key];
             changed = true;
+            continue;
+        }
+        // Strip blacklisted name from other characters' aliases
+        const char = states[key];
+        if (Array.isArray(char?.aliases)) {
+            const before = char.aliases.length;
+            char.aliases = char.aliases.filter(a => !namesMatchInsensitive(a, trimmed));
+            if (char.aliases.length !== before) changed = true;
         }
     }
 

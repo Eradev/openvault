@@ -283,6 +283,30 @@
     word-break: break-word;
 }
 
+.openvault-character-name-edit {
+    flex: 1;
+    min-width: 0;
+    margin-bottom: 0;
+}
+
+.openvault-character-aliases {
+    font-size: 0.8em;
+    color: var(--SmartThemeEmColor, #888);
+    margin-bottom: 6px;
+}
+
+.openvault-character-description {
+    font-size: 0.9em;
+    margin-bottom: 6px;
+    line-height: 1.35;
+}
+
+.openvault-character-features {
+    font-size: 0.8em;
+    color: var(--SmartThemeEmColor, #888);
+    margin-bottom: 6px;
+}
+
 .openvault-blacklist-btn,
 .openvault-unblacklist-btn {
     flex-shrink: 0;

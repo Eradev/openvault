@@ -7,6 +7,7 @@
 import { generateId, log } from '../utils.js';
 import { CHARACTERS_KEY, RELATIONSHIPS_KEY } from '../constants.js';
 import { isUnknownLocation, resolveLocation, upsertPlaceFromFacts } from '../places.js';
+import { ensureCharacter, upsertCharacterFromFacts } from '../characters.js';
 import { getBlacklistSet, normalizeBlacklistName } from '../blacklist.js';
 
 /**
@@ -84,6 +85,16 @@ export function sanitizeEventsAgainstBlacklist(events, blacklistedNames = null) 
             }
             event.place_facts.occupants = cleaned;
         }
+
+        if (event.character_facts && typeof event.character_facts === 'object') {
+            const factsName = event.character_facts.name;
+            if (factsName && blocked.has(normalizeBlacklistName(factsName))) {
+                delete event.character_facts;
+            } else if (Array.isArray(event.character_facts.aliases)) {
+                event.character_facts.aliases = event.character_facts.aliases
+                    .filter(n => n && !blocked.has(normalizeBlacklistName(n)));
+            }
+        }
     }
 
     return events;
@@ -120,6 +131,9 @@ export function parseExtractionResult(jsonString, messages, characterName, userN
             const placeFacts = event.place_facts && typeof event.place_facts === 'object'
                 ? event.place_facts
                 : null;
+            const characterFacts = event.character_facts && typeof event.character_facts === 'object'
+                ? event.character_facts
+                : null;
 
             return {
                 id: generateId(),
@@ -134,6 +148,7 @@ export function parseExtractionResult(jsonString, messages, characterName, userN
                 location,
                 location_id: null, // resolved in updatePlacesFromEvents
                 place_facts: placeFacts,
+                character_facts: characterFacts,
                 is_secret: event.is_secret || false,
                 importance: Math.min(5, Math.max(1, event.importance || 3)), // Clamp to 1-5, default 3
                 emotional_impact: event.emotional_impact || {},
@@ -163,25 +178,29 @@ export function updateCharacterStatesFromEvents(events, data, blacklistedNames =
             ? { min: Math.min(...messageIds), max: Math.max(...messageIds) }
             : null;
 
+        // Lasting character profile facts (nicknames, appearance, traits)
+        if (event.character_facts && typeof event.character_facts === 'object') {
+            const factsName = event.character_facts.name;
+            if (!factsName || !blocked.has(normalizeBlacklistName(factsName))) {
+                upsertCharacterFromFacts(data, event.character_facts, {
+                    eventId: event.id,
+                });
+            }
+        }
+
         // Update emotional impact
         if (event.emotional_impact) {
             for (const [charName, emotion] of Object.entries(event.emotional_impact)) {
                 if (blocked.has(normalizeBlacklistName(charName))) continue;
 
-                if (!data[CHARACTERS_KEY][charName]) {
-                    data[CHARACTERS_KEY][charName] = {
-                        name: charName,
-                        current_emotion: 'neutral',
-                        emotion_intensity: 5,
-                        known_events: [],
-                    };
-                }
+                const char = ensureCharacter(data, charName);
+                if (!char) continue;
 
                 // Update emotion and track which messages it's from
-                data[CHARACTERS_KEY][charName].current_emotion = emotion;
-                data[CHARACTERS_KEY][charName].last_updated = Date.now();
+                char.current_emotion = emotion;
+                char.last_updated = Date.now();
                 if (messageRange) {
-                    data[CHARACTERS_KEY][charName].emotion_from_messages = messageRange;
+                    char.emotion_from_messages = messageRange;
                 }
             }
         }
@@ -190,18 +209,15 @@ export function updateCharacterStatesFromEvents(events, data, blacklistedNames =
         for (const witness of (event.witnesses || [])) {
             if (blocked.has(normalizeBlacklistName(witness))) continue;
 
-            if (!data[CHARACTERS_KEY][witness]) {
-                data[CHARACTERS_KEY][witness] = {
-                    name: witness,
-                    current_emotion: 'neutral',
-                    emotion_intensity: 5,
-                    known_events: [],
-                };
-            }
-            if (!data[CHARACTERS_KEY][witness].known_events.includes(event.id)) {
-                data[CHARACTERS_KEY][witness].known_events.push(event.id);
+            const char = ensureCharacter(data, witness);
+            if (!char) continue;
+            if (!char.known_events.includes(event.id)) {
+                char.known_events.push(event.id);
             }
         }
+
+        // Drop bulky character_facts from stored event after merge (facts live on the profile)
+        delete event.character_facts;
     }
 }
 

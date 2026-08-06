@@ -32,6 +32,33 @@ ${lines}
 }
 
 /**
+ * Build a short list of established character names for the extraction LLM.
+ * @param {Object} characters - character_states map
+ * @returns {string}
+ */
+function formatKnownCharactersSection(characters = {}) {
+    const list = Object.values(characters || {}).filter(Boolean);
+    if (list.length === 0) return '';
+
+    const lines = list
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+        .slice(0, 40)
+        .map(c => {
+            const aliases = (c.aliases || []).length ? ` (aka: ${c.aliases.join(', ')})` : '';
+            return `- ${c.name || 'Unknown'}${aliases}`;
+        })
+        .join('\n');
+
+    return `
+## Previously Established Characters
+Reuse these canonical character names when referring to the same person. Do not invent duplicate names for the same character.
+
+${lines}
+
+`;
+}
+
+/**
  * Build the extraction prompt
  * @param {string} messagesText - Formatted messages to analyze
  * @param {string} characterName - Main character name
@@ -41,9 +68,10 @@ ${lines}
  * @param {string} personaDescription - User persona description (optional)
  * @param {Object} existingPlaces - Known places map (optional)
  * @param {string[]} blacklistedNames - Names that must not be treated as characters (optional)
+ * @param {Object} existingCharacters - Known character_states map (optional)
  * @returns {string} The extraction prompt
  */
-export function buildExtractionPrompt(messagesText, characterName, userName, existingMemories = [], characterDescription = '', personaDescription = '', existingPlaces = {}, blacklistedNames = []) {
+export function buildExtractionPrompt(messagesText, characterName, userName, existingMemories = [], characterDescription = '', personaDescription = '', existingPlaces = {}, blacklistedNames = [], existingCharacters = {}) {
     // Build character context section if we have descriptions
     let characterContextSection = '';
     if (characterDescription || personaDescription) {
@@ -77,13 +105,14 @@ ${memorySummaries}
     }
 
     const placesContextSection = formatKnownPlacesSection(existingPlaces);
+    const charactersContextSection = formatKnownCharactersSection(existingCharacters);
 
     let blacklistSection = '';
     if (Array.isArray(blacklistedNames) && blacklistedNames.length > 0) {
         const list = blacklistedNames.map(n => `- ${n}`).join('\n');
         blacklistSection = `
 ## Blacklisted Names (Do Not Treat as Characters)
-These labels are collectives, narrators, or non-characters. Never use them in characters_involved, witnesses, emotional_impact, relationship_impact, or place occupants.
+These labels are collectives, narrators, or non-characters. Never use them in characters_involved, witnesses, emotional_impact, relationship_impact, place occupants, or character_facts.
 Attribute involvement, emotions, and relationships to the individual characters present in the scene instead.
 
 ${list}
@@ -96,7 +125,7 @@ ${list}
 ## Characters
 - Main character: ${characterName}
 - User's character: ${userName}
-${characterContextSection}${memoryContextSection}${placesContextSection}${blacklistSection}
+${characterContextSection}${memoryContextSection}${charactersContextSection}${placesContextSection}${blacklistSection}
 ## Messages to analyze:
 ${messagesText}
 
@@ -118,6 +147,12 @@ Extract NEW significant events from these messages. Use the Character Context (i
     - **occupants**: Object mapping character names to roles (e.g., {"Maya": "bartender"}) (optional)
     - **features**: Notable features as a string array (optional)
     Use event_type "place_change" when the event is primarily about discovering or changing a place. You may also attach place_facts to other event types when location details are revealed.
+11. **character_facts** (optional): When the scene establishes or updates lasting character identity (not temporary state), include:
+    - **name**: Canonical character name (reuse Previously Established Characters when applicable)
+    - **aliases**: Nicknames or alternate names (optional array)
+    - **description**: Lasting physical appearance / identity (optional)
+    - **features**: Lasting traits as a string array (e.g. scars, accent, occupation) (optional)
+    Do NOT put clothing, temporary appearance, current thoughts, mood, or inventory in character_facts. Mood belongs in emotional_impact.
 
 Only extract events that are significant for character memory and story continuity. Skip mundane exchanges.
 ${existingMemories.length > 0 ? 'Do NOT duplicate events from the "Previously Established Memories" section.' : ''}
@@ -140,6 +175,12 @@ Respond with a JSON array of events:
       "aliases": [],
       "description": "...",
       "occupants": {},
+      "features": []
+    },
+    "character_facts": {
+      "name": "...",
+      "aliases": [],
+      "description": "...",
       "features": []
     }
   }

@@ -8,6 +8,7 @@ import { saveChatConditional } from '../../../../../../script.js';
 import { getOpenVaultData, escapeHtml, showToast } from '../utils.js';
 import { MEMORIES_KEY, CHARACTERS_KEY, RELATIONSHIPS_KEY, PLACES_KEY, MEMORIES_PER_PAGE } from '../constants.js';
 import { isUnknownLocation } from '../places.js';
+import { renameCharacter } from '../characters.js';
 import {
     getBlacklistedNames,
     canEditBlacklist,
@@ -363,6 +364,7 @@ export function renderCharacterStates() {
         if (blacklistedLower.has(normalizeBlacklistName(name))) continue;
 
         const char = characters[name];
+        const displayName = char.name || name;
         const emotion = char.current_emotion || 'neutral';
         const intensity = char.emotion_intensity || 5;
         const knownCount = char.known_events?.length || 0;
@@ -376,18 +378,31 @@ export function renderCharacterStates() {
                 : ` (msgs ${min}-${max})`;
         }
 
+        const aliases = char.aliases?.length
+            ? `<div class="openvault-character-aliases">Also known as: ${escapeHtml(char.aliases.join(', '))}</div>`
+            : '';
+        const description = char.description
+            ? `<div class="openvault-character-description">${escapeHtml(char.description)}</div>`
+            : '<div class="openvault-character-description openvault-placeholder-inline">No description yet</div>';
+        const features = char.features?.length
+            ? `<div class="openvault-character-features">Traits: ${escapeHtml(char.features.join(', '))}</div>`
+            : '';
+
         const blacklistBtn = editable
-            ? `<button class="menu_button openvault-blacklist-btn" data-name="${escapeHtml(name)}" title="Blacklist this name">
+            ? `<button class="menu_button openvault-blacklist-btn" data-name="${escapeHtml(displayName)}" title="Blacklist this name">
                     <i class="fa-solid fa-ban"></i>
                </button>`
             : '';
 
         $container.append(`
-            <div class="openvault-character-item">
+            <div class="openvault-character-item" data-name="${escapeHtml(displayName)}">
                 <div class="openvault-character-header">
-                    <div class="openvault-character-name">${escapeHtml(name)}</div>
+                    <div class="openvault-character-name">${escapeHtml(displayName)}</div>
                     ${blacklistBtn}
                 </div>
+                ${aliases}
+                ${description}
+                ${features}
                 <div class="openvault-emotion">
                     <span class="openvault-emotion-label">${escapeHtml(emotion)}${emotionSource}</span>
                     <div class="openvault-emotion-bar">
@@ -395,6 +410,11 @@ export function renderCharacterStates() {
                     </div>
                 </div>
                 <div class="openvault-memory-witnesses">Known events: ${knownCount}</div>
+                <div class="openvault-item-actions">
+                    <button class="menu_button openvault-edit-character" data-name="${escapeHtml(displayName)}">
+                        <i class="fa-solid fa-pen"></i> Edit
+                    </button>
+                </div>
             </div>
         `);
     }
@@ -435,6 +455,108 @@ export function renderCharacterStates() {
         const ok = await removeBlacklistedName(name);
         if (ok) refreshAllUI();
     });
+
+    $container.find('.openvault-edit-character').on('click', function() {
+        const $item = $(this).closest('.openvault-character-item');
+        beginCharacterEdit($item, $(this).attr('data-name'));
+    });
+}
+
+/**
+ * Switch a character item into inline name + description edit mode
+ * @param {JQuery} $item - Character item element
+ * @param {string} name - Current character name
+ */
+function beginCharacterEdit($item, name) {
+    const data = getOpenVaultData();
+    const characters = data?.[CHARACTERS_KEY] || {};
+    const char = characters[name]
+        || Object.values(characters).find(c => c?.name === name);
+    if (!char || !$item.length) return;
+
+    const currentName = char.name || name;
+    const currentDesc = char.description || '';
+
+    $item.find('.openvault-character-name').replaceWith(
+        `<input type="text" class="text_pole openvault-character-name-edit" value="${escapeHtml(currentName)}" />`
+    );
+    $item.find('.openvault-character-description').replaceWith(
+        `<textarea class="openvault-edit-textarea openvault-character-description-edit" rows="3">${escapeHtml(currentDesc)}</textarea>`
+    );
+    $item.find('.openvault-item-actions').html(`
+        <button class="menu_button openvault-save-character" data-name="${escapeHtml(currentName)}">
+            <i class="fa-solid fa-check"></i> Save
+        </button>
+        <button class="menu_button openvault-cancel-character-edit">
+            <i class="fa-solid fa-xmark"></i> Cancel
+        </button>
+    `);
+
+    $item.find('.openvault-character-name-edit').trigger('focus');
+    $item.find('.openvault-save-character').on('click', async function() {
+        const oldName = $(this).attr('data-name');
+        const newName = $item.find('.openvault-character-name-edit').val();
+        const description = $item.find('.openvault-character-description-edit').val();
+        await saveCharacterEdits(oldName, newName, description);
+    });
+    $item.find('.openvault-cancel-character-edit').on('click', () => renderCharacterStates());
+}
+
+/**
+ * Persist character name (with cascade) and description edits
+ * @param {string} oldName
+ * @param {string} newName
+ * @param {string} description
+ */
+async function saveCharacterEdits(oldName, newName, description) {
+    const data = getOpenVaultData();
+    if (!data) {
+        showToast('warning', 'No chat loaded');
+        return;
+    }
+
+    const trimmedNew = String(newName || '').trim();
+    if (!trimmedNew) {
+        showToast('warning', 'Name cannot be empty');
+        return;
+    }
+
+    const states = data[CHARACTERS_KEY] || {};
+    const nameChanged = trimmedNew.toLowerCase() !== String(oldName || '').trim().toLowerCase();
+    if (nameChanged) {
+        const hasCollision = Object.entries(states).some(([key, c]) => {
+            if (!c) return false;
+            if (key === oldName || c.name === oldName) return false;
+            return key.toLowerCase() === trimmedNew.toLowerCase()
+                || (c.name || '').toLowerCase() === trimmedNew.toLowerCase();
+        });
+        if (hasCollision) {
+            if (!confirm(`A character named "${trimmedNew}" already exists. Merge them?`)) {
+                return;
+            }
+        }
+
+        const result = renameCharacter(data, oldName, trimmedNew);
+        if (!result.ok) {
+            showToast('warning', result.error || 'Rename failed');
+            return;
+        }
+    }
+
+    const char = data[CHARACTERS_KEY]?.[trimmedNew]
+        || Object.values(data[CHARACTERS_KEY] || {}).find(c =>
+            c && (c.name || '').toLowerCase() === trimmedNew.toLowerCase()
+        );
+    if (!char) {
+        showToast('warning', 'Character not found');
+        return;
+    }
+
+    char.description = (description || '').trim();
+    char.last_updated = Date.now();
+    await saveChatConditional();
+    refreshAllUI();
+    showToast('success', nameChanged ? 'Character renamed and updated' : 'Character updated');
 }
 
 /**
