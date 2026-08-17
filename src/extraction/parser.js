@@ -101,6 +101,63 @@ export function sanitizeEventsAgainstBlacklist(events, blacklistedNames = null) 
 }
 
 /**
+ * Whether a parsed object looks like an extraction event.
+ * @param {*} value
+ * @returns {boolean}
+ */
+function isEventLike(value) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        && (value.event_type || value.summary);
+}
+
+/**
+ * Collect event objects from a parsed JSON value.
+ * Arrays are concatenated; a single event-like object is included; empty arrays are skipped.
+ * @param {*} parsed
+ * @returns {Object[]}
+ */
+function collectEventsFromParsed(parsed) {
+    if (Array.isArray(parsed)) {
+        return parsed.filter(item => item && typeof item === 'object' && !Array.isArray(item));
+    }
+    if (isEventLike(parsed)) {
+        return [parsed];
+    }
+    return [];
+}
+
+/**
+ * Parse JSON from all markdown fences (or the whole string) and merge event arrays.
+ * Models sometimes emit `[]` then a second block with the real events.
+ * @param {string} jsonString
+ * @returns {Object[]}
+ */
+function extractMergedEvents(jsonString) {
+    const text = String(jsonString || '');
+    const fenceRe = /```(?:json)?\s*([\s\S]*?)```/g;
+    const events = [];
+    let sawFence = false;
+    let match;
+
+    while ((match = fenceRe.exec(text)) !== null) {
+        sawFence = true;
+        try {
+            const parsed = JSON.parse(match[1].trim());
+            events.push(...collectEventsFromParsed(parsed));
+        } catch {
+            // Skip unparseable fences
+        }
+    }
+
+    if (!sawFence) {
+        const parsed = JSON.parse(text.trim());
+        events.push(...collectEventsFromParsed(parsed));
+    }
+
+    return events;
+}
+
+/**
  * Parse extraction result from LLM
  * @param {string} jsonString - JSON string from LLM
  * @param {Array} messages - Source messages
@@ -111,15 +168,7 @@ export function sanitizeEventsAgainstBlacklist(events, blacklistedNames = null) 
  */
 export function parseExtractionResult(jsonString, messages, characterName, userName, batchId = null) {
     try {
-        // Extract JSON from response (handle markdown code blocks)
-        let cleaned = jsonString;
-        const jsonMatch = jsonString.match(/```(?:json)?\s*([\s\S]*?)```/);
-        if (jsonMatch) {
-            cleaned = jsonMatch[1];
-        }
-
-        const parsed = JSON.parse(cleaned.trim());
-        const events = Array.isArray(parsed) ? parsed : [parsed];
+        const events = extractMergedEvents(jsonString);
 
         // Get message IDs for sequence ordering
         const messageIds = messages.map(m => m.id);
