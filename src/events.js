@@ -6,8 +6,8 @@
 
 import { eventSource, event_types, saveChatConditional } from '../../../../../script.js';
 import { getContext, extension_settings } from '../../../../extensions.js';
-import { getOpenVaultData, getCurrentChatId, saveOpenVaultData, showToast, safeSetExtensionPrompt, withTimeout, log, getExtractableMessages, getTransientApiErrorMessage } from './utils.js';
-import { extensionName, MEMORIES_KEY, EXTRACTED_BATCHES_KEY, LAST_PROCESSED_KEY, RETRIEVAL_TIMEOUT_MS, EXTRACTION_DELAY_MS } from './constants.js';
+import { getOpenVaultData, getCurrentChatId, saveOpenVaultData, showToast, safeSetExtensionPrompt, withTimeout, log, getExtractableMessages, getTransientApiErrorMessage, resolveTimeoutMs } from './utils.js';
+import { extensionName, MEMORIES_KEY, EXTRACTED_BATCHES_KEY, LAST_PROCESSED_KEY, EXTRACTION_DELAY_MS } from './constants.js';
 import { operationState, setGenerationLock, clearGenerationLock, isChatLoadingCooldown, setChatLoadingCooldown, resetOperationStatesIfSafe, isRerollGenerationType, clearCachedRetrieval, hasInFlightLlmRequests } from './state.js';
 import { setStatus } from './ui/status.js';
 import { refreshAllUI, resetMemoryBrowserPage } from './ui/browser.js';
@@ -159,11 +159,13 @@ export async function onBeforeGeneration(type, options, dryRun = false) {
         // Do memory retrieval before generation
         log(`>>> Pre-generation retrieval starting (type: ${type}, message: "${pendingUserMessage.substring(0, 50)}...")`);
         try {
-            await withTimeout(
-                updateInjection(pendingUserMessage),
-                RETRIEVAL_TIMEOUT_MS,
-                'Memory retrieval'
-            );
+            const retrieval = updateInjection(pendingUserMessage);
+            const timeoutMs = resolveTimeoutMs(settings.retrievalTimeoutSeconds);
+            if (timeoutMs >= 0) {
+                await withTimeout(retrieval, timeoutMs, 'Memory retrieval');
+            } else {
+                await retrieval;
+            }
             log('>>> Pre-generation retrieval complete');
             $('.openvault-retrieving-toast').remove();
             showToast('success', 'Memory context ready', 'OpenVault', { timeOut: 1500 });

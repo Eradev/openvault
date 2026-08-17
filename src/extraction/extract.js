@@ -7,7 +7,7 @@
 import { getContext, extension_settings } from '../../../../../extensions.js';
 import { saveChatConditional } from '../../../../../../script.js';
 import { ConnectionManagerRequestService } from '../../../../shared.js';
-import { getOpenVaultData, saveOpenVaultData, showToast, log, isExtractableMessage, getTransientApiErrorMessage, isAbortError, isRateLimitError, safeSetExtensionPrompt } from '../utils.js';
+import { getOpenVaultData, saveOpenVaultData, showToast, log, isExtractableMessage, getTransientApiErrorMessage, isAbortError, isRateLimitError, safeSetExtensionPrompt, resolveTimeoutMs, runWithAbortTimeout } from '../utils.js';
 import { extensionName, MEMORIES_KEY, CHARACTERS_KEY, PLACES_KEY, LAST_PROCESSED_KEY, LAST_BATCH_KEY, EXTRACTED_BATCHES_KEY } from '../constants.js';
 import { setStatus } from '../ui/status.js';
 import { refreshAllUI } from '../ui/browser.js';
@@ -79,18 +79,24 @@ export async function callLLMForExtraction(prompt) {
     // sendRequest requires a positive maxTokens; -1 means no OpenVault cap
     const budget = Number(settings.extractionTokenBudget);
     const maxTokens = Number.isFinite(budget) && budget >= 0 ? budget : 32768;
+    const timeoutMs = resolveTimeoutMs(settings.extractionTimeoutSeconds);
 
     // Send request via ConnectionManagerRequestService
-    const result = await trackLlmRequest(() => ConnectionManagerRequestService.sendRequest(
-        profileId,
-        messages,
-        maxTokens,
-        {
-            includePreset: true,
-            includeInstruct: true,
-            stream: false
-        },
-        {} // override payload
+    const result = await trackLlmRequest(() => runWithAbortTimeout(
+        signal => ConnectionManagerRequestService.sendRequest(
+            profileId,
+            messages,
+            maxTokens,
+            {
+                includePreset: true,
+                includeInstruct: true,
+                stream: false,
+                signal,
+            },
+            {} // override payload
+        ),
+        timeoutMs,
+        'Extraction'
     ));
 
     // Extract content from response

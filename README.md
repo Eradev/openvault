@@ -58,7 +58,9 @@ Use the buttons in the settings panel:
 | **Automatic Mode** | Auto-extract and retrieve memories | On |
 | **Extraction Profile** | LLM connection profile for extraction | Current |
 | **Extraction Token Budget** | Max tokens for the extraction LLM response (-1 = no limit) | -1 |
+| **Extraction Timeout** | Seconds to wait for the extraction LLM (-1 = no timeout) | 300 |
 | **Retrieval Token Budget** | Max tokens for injected memory context | 1000 |
+| **Retrieval Timeout** | Seconds to wait for smart retrieval (-1 = no timeout) | 300 |
 | **Messages per Extraction** | Messages to analyze per extraction | 5 |
 | **Memory Context** | Memories shown to extraction LLM (-1 = All) | All |
 | **Smart Retrieval** | Use LLM to select relevant memories | Off |

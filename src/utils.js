@@ -59,7 +59,8 @@ export function withTimeout(promise, ms, operation = 'Operation') {
         const timer = setTimeout(() => {
             if (!settled) {
                 settled = true;
-                reject(new Error(`${operation} timed out after ${ms}ms`));
+                const seconds = Math.round(ms / 1000);
+                reject(new Error(`${operation} timed out after ${seconds}s`));
             }
         }, ms);
 
@@ -80,6 +81,65 @@ export function withTimeout(promise, ms, operation = 'Operation') {
             }
         );
     });
+}
+
+/**
+ * Convert a seconds setting to milliseconds. -1 / invalid => -1 (no timeout).
+ * @param {number} seconds
+ * @returns {number}
+ */
+export function resolveTimeoutMs(seconds) {
+    const n = Number(seconds);
+    if (!Number.isFinite(n) || n < 0) return -1;
+    return n * 1000;
+}
+
+/**
+ * Run an async function with an AbortSignal, aborting when timeoutMs elapses.
+ * timeoutMs < 0 means no timeout.
+ * @template T
+ * @param {(signal: AbortSignal) => Promise<T>} fn
+ * @param {number} timeoutMs
+ * @param {string} [operation]
+ * @returns {Promise<T>}
+ */
+export async function runWithAbortTimeout(fn, timeoutMs, operation = 'Operation') {
+    const controller = new AbortController();
+    let timer = null;
+    let timedOut = false;
+
+    if (timeoutMs >= 0) {
+        timer = setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+        }, timeoutMs);
+    }
+
+    try {
+        return await fn(controller.signal);
+    } catch (error) {
+        if (timedOut) {
+            const seconds = Math.round(timeoutMs / 1000);
+            const timeoutError = new Error(`${operation} timed out after ${seconds}s`);
+            timeoutError.name = 'TimeoutError';
+            throw timeoutError;
+        }
+        throw error;
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+}
+
+/**
+ * Whether an error looks like a request timeout
+ * @param {any} error
+ * @returns {boolean}
+ */
+export function isTimeoutError(error) {
+    if (!error) return false;
+    if (error.name === 'TimeoutError') return true;
+    const message = String(error.message || error || '');
+    return /timed out after/i.test(message);
 }
 
 /**
@@ -113,6 +173,10 @@ export function isRateLimitError(error) {
  * @returns {string|null} Message if transient, else null
  */
 export function getTransientApiErrorMessage(error) {
+    if (isTimeoutError(error)) {
+        const message = String(error.message || 'Request timed out');
+        return `${message} — skipped this run`;
+    }
     if (isAbortError(error)) {
         return 'Request was cancelled — skipped this run';
     }

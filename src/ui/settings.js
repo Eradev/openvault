@@ -91,6 +91,22 @@ function bindUIElements() {
         saveSettingsDebounced();
     });
 
+    // Extraction timeout input
+    $('#openvault_extraction_timeout').on('change', function() {
+        const value = parseInt($(this).val());
+        settings.extractionTimeoutSeconds = isNaN(value) ? 300 : value;
+        $(this).val(settings.extractionTimeoutSeconds);
+        saveSettingsDebounced();
+    });
+
+    // Retrieval timeout input
+    $('#openvault_retrieval_timeout').on('change', function() {
+        const value = parseInt($(this).val());
+        settings.retrievalTimeoutSeconds = isNaN(value) ? 300 : value;
+        $(this).val(settings.retrievalTimeoutSeconds);
+        saveSettingsDebounced();
+    });
+
     // Max memories per retrieval input
     $('#openvault_max_memories').on('change', function() {
         const value = parseInt($(this).val());
@@ -215,6 +231,8 @@ export function updateUI() {
     $('#openvault_automatic').prop('checked', settings.automaticMode);
     $('#openvault_token_budget').val(settings.tokenBudget);
     $('#openvault_extraction_token_budget').val(settings.extractionTokenBudget);
+    $('#openvault_extraction_timeout').val(settings.extractionTimeoutSeconds);
+    $('#openvault_retrieval_timeout').val(settings.retrievalTimeoutSeconds);
     $('#openvault_max_memories').val(settings.maxMemoriesPerRetrieval);
     $('#openvault_debug').prop('checked', settings.debugMode);
 

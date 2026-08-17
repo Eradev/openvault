@@ -7,7 +7,7 @@
 
 import { getContext, extension_settings } from '../../../../../extensions.js';
 import { ConnectionManagerRequestService } from '../../../../shared.js';
-import { log, showToast, getTransientApiErrorMessage } from '../utils.js';
+import { log, showToast, getTransientApiErrorMessage, resolveTimeoutMs, runWithAbortTimeout } from '../utils.js';
 import { extensionName } from '../constants.js';
 import { trackLlmRequest } from '../state.js';
 import { hasCharacterProfile } from '../characters.js';
@@ -52,16 +52,22 @@ async function callLLMForRetrieval(prompt) {
         ];
 
         // Send request via ConnectionManagerRequestService
-        const result = await trackLlmRequest(() => ConnectionManagerRequestService.sendRequest(
-            profileId,
-            messages,
-            1000, // max tokens (retrieval needs less than extraction)
-            {
-                includePreset: true,
-                includeInstruct: true,
-                stream: false
-            },
-            {} // override payload
+        const timeoutMs = resolveTimeoutMs(settings.retrievalTimeoutSeconds);
+        const result = await trackLlmRequest(() => runWithAbortTimeout(
+            signal => ConnectionManagerRequestService.sendRequest(
+                profileId,
+                messages,
+                1000, // max tokens (retrieval needs less than extraction)
+                {
+                    includePreset: true,
+                    includeInstruct: true,
+                    stream: false,
+                    signal,
+                },
+                {} // override payload
+            ),
+            timeoutMs,
+            'Memory retrieval'
         ));
 
         // Extract content from response

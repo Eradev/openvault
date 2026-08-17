@@ -28,6 +28,8 @@ export const defaultSettings = {
     debugMode: false,
     // Extraction settings
     extractionTokenBudget: -1,
+    extractionTimeoutSeconds: 300,
+    retrievalTimeoutSeconds: 300,
     messagesPerExtraction: 10,
     memoryContextCount: -1,
     smartRetrievalEnabled: true,
@@ -40,7 +42,6 @@ export const defaultSettings = {
 };
 
 // Timeout constants
-export const RETRIEVAL_TIMEOUT_MS = 300000; // 5 minutes max for retrieval
 export const GENERATION_LOCK_TIMEOUT_MS = 300000; // 5 minutes safety timeout
 // Wait after AI reply before extraction to avoid competing with the main API rate limit
 export const EXTRACTION_DELAY_MS = 3000;
