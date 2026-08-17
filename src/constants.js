@@ -27,6 +27,7 @@ export const defaultSettings = {
     maxMemoriesPerRetrieval: 10,
     debugMode: false,
     // Extraction settings
+    extractionTokenBudget: -1,
     messagesPerExtraction: 10,
     memoryContextCount: -1,
     smartRetrievalEnabled: true,

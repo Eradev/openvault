@@ -57,7 +57,8 @@ Use the buttons in the settings panel:
 | **Enable OpenVault** | Toggle the extension on/off | On |
 | **Automatic Mode** | Auto-extract and retrieve memories | On |
 | **Extraction Profile** | LLM connection profile for extraction | Current |
-| **Token Budget** | Max tokens for injected memory context | 1000 |
+| **Extraction Token Budget** | Max tokens for the extraction LLM response (-1 = no limit) | -1 |
+| **Retrieval Token Budget** | Max tokens for injected memory context | 1000 |
 | **Messages per Extraction** | Messages to analyze per extraction | 5 |
 | **Memory Context** | Memories shown to extraction LLM (-1 = All) | All |
 | **Smart Retrieval** | Use LLM to select relevant memories | Off |

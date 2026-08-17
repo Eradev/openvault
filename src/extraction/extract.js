@@ -76,11 +76,15 @@ export async function callLLMForExtraction(prompt) {
         { role: 'user', content: prompt }
     ];
 
+    // sendRequest requires a positive maxTokens; -1 means no OpenVault cap
+    const budget = Number(settings.extractionTokenBudget);
+    const maxTokens = Number.isFinite(budget) && budget >= 0 ? budget : 32768;
+
     // Send request via ConnectionManagerRequestService
     const result = await trackLlmRequest(() => ConnectionManagerRequestService.sendRequest(
         profileId,
         messages,
-        2000, // max tokens
+        maxTokens,
         {
             includePreset: true,
             includeInstruct: true,

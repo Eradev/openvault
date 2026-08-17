@@ -83,6 +83,14 @@ function bindUIElements() {
         saveSettingsDebounced();
     });
 
+    // Extraction token budget input
+    $('#openvault_extraction_token_budget').on('change', function() {
+        const value = parseInt($(this).val());
+        settings.extractionTokenBudget = isNaN(value) ? -1 : value;
+        $(this).val(settings.extractionTokenBudget);
+        saveSettingsDebounced();
+    });
+
     // Max memories per retrieval input
     $('#openvault_max_memories').on('change', function() {
         const value = parseInt($(this).val());
@@ -206,6 +214,7 @@ export function updateUI() {
     $('#openvault_enabled').prop('checked', settings.enabled);
     $('#openvault_automatic').prop('checked', settings.automaticMode);
     $('#openvault_token_budget').val(settings.tokenBudget);
+    $('#openvault_extraction_token_budget').val(settings.extractionTokenBudget);
     $('#openvault_max_memories').val(settings.maxMemoriesPerRetrieval);
     $('#openvault_debug').prop('checked', settings.debugMode);
 
