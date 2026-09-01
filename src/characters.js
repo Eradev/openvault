@@ -43,6 +43,59 @@ export function hasCharacterProfile(char) {
 }
 
 /**
+ * Parse comma- or semicolon-separated nicknames into a deduped list.
+ * @param {string} input
+ * @param {string} [canonicalName] - Excluded when it matches a nickname
+ * @returns {string[]}
+ */
+export function parseAliasesInput(input, canonicalName = '') {
+    const result = [];
+    for (const part of String(input || '').split(/[,;]+/)) {
+        const trimmed = part.trim();
+        if (!trimmed) continue;
+        if (canonicalName && namesMatchInsensitive(trimmed, canonicalName)) continue;
+        pushUniqueInsensitive(result, trimmed);
+    }
+    return result;
+}
+
+/**
+ * Ensure nicknames do not collide with other characters or the blacklist.
+ * @param {Object} states - character_states map
+ * @param {string} characterName - Canonical name of the character being edited
+ * @param {string[]} aliases
+ * @returns {{ ok: boolean, error?: string }}
+ */
+export function validateCharacterAliases(states, characterName, aliases) {
+    if (!Array.isArray(aliases)) return { ok: true };
+
+    for (const alias of aliases) {
+        if (isBlacklistedName(alias)) {
+            return { ok: false, error: `"${alias}" is blacklisted` };
+        }
+
+        for (const [key, other] of Object.entries(states || {})) {
+            if (!other) continue;
+            const otherName = other.name || key;
+            if (namesMatchInsensitive(otherName, characterName)
+                || namesMatchInsensitive(key, characterName)) {
+                continue;
+            }
+            if (namesMatchInsensitive(alias, otherName) || namesMatchInsensitive(alias, key)) {
+                return { ok: false, error: `"${alias}" is already used by ${otherName}` };
+            }
+            for (const otherAlias of (other.aliases || [])) {
+                if (namesMatchInsensitive(alias, otherAlias)) {
+                    return { ok: false, error: `"${alias}" is already a nickname of ${otherName}` };
+                }
+            }
+        }
+    }
+
+    return { ok: true };
+}
+
+/**
  * Merge a string into a unique list (case-insensitive for membership).
  * @param {string[]} list
  * @param {string} value

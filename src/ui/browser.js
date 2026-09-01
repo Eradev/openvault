@@ -8,7 +8,11 @@ import { saveChatConditional } from '../../../../../../script.js';
 import { getOpenVaultData, escapeHtml, showToast } from '../utils.js';
 import { MEMORIES_KEY, CHARACTERS_KEY, RELATIONSHIPS_KEY, PLACES_KEY, MEMORIES_PER_PAGE } from '../constants.js';
 import { isUnknownLocation } from '../places.js';
-import { renameCharacter } from '../characters.js';
+import {
+    renameCharacter,
+    parseAliasesInput,
+    validateCharacterAliases,
+} from '../characters.js';
 import {
     getBlacklistedNames,
     canEditBlacklist,
@@ -380,7 +384,7 @@ export function renderCharacterStates() {
 
         const aliases = char.aliases?.length
             ? `<div class="openvault-character-aliases">Also known as: ${escapeHtml(char.aliases.join(', '))}</div>`
-            : '';
+            : '<div class="openvault-character-aliases openvault-placeholder-inline">No nicknames yet</div>';
         const description = char.description
             ? `<div class="openvault-character-description">${escapeHtml(char.description)}</div>`
             : '<div class="openvault-character-description openvault-placeholder-inline">No description yet</div>';
@@ -476,9 +480,13 @@ function beginCharacterEdit($item, name) {
 
     const currentName = char.name || name;
     const currentDesc = char.description || '';
+    const currentAliases = (char.aliases || []).join(', ');
 
     $item.find('.openvault-character-name').replaceWith(
         `<input type="text" class="text_pole openvault-character-name-edit" value="${escapeHtml(currentName)}" />`
+    );
+    $item.find('.openvault-character-aliases').replaceWith(
+        `<input type="text" class="text_pole openvault-character-aliases-edit" placeholder="Nicknames (comma-separated)" value="${escapeHtml(currentAliases)}" />`
     );
     $item.find('.openvault-character-description').replaceWith(
         `<textarea class="openvault-edit-textarea openvault-character-description-edit" rows="3">${escapeHtml(currentDesc)}</textarea>`
@@ -496,19 +504,21 @@ function beginCharacterEdit($item, name) {
     $item.find('.openvault-save-character').on('click', async function() {
         const oldName = $(this).attr('data-name');
         const newName = $item.find('.openvault-character-name-edit').val();
+        const aliases = $item.find('.openvault-character-aliases-edit').val();
         const description = $item.find('.openvault-character-description-edit').val();
-        await saveCharacterEdits(oldName, newName, description);
+        await saveCharacterEdits(oldName, newName, aliases, description);
     });
     $item.find('.openvault-cancel-character-edit').on('click', () => renderCharacterStates());
 }
 
 /**
- * Persist character name (with cascade) and description edits
+ * Persist character name (with cascade), nicknames, and description edits
  * @param {string} oldName
  * @param {string} newName
+ * @param {string} aliasesInput
  * @param {string} description
  */
-async function saveCharacterEdits(oldName, newName, description) {
+async function saveCharacterEdits(oldName, newName, aliasesInput, description) {
     const data = getOpenVaultData();
     if (!data) {
         showToast('warning', 'No chat loaded');
@@ -552,6 +562,14 @@ async function saveCharacterEdits(oldName, newName, description) {
         return;
     }
 
+    const aliases = parseAliasesInput(aliasesInput, char.name || trimmedNew);
+    const aliasCheck = validateCharacterAliases(data[CHARACTERS_KEY], char.name || trimmedNew, aliases);
+    if (!aliasCheck.ok) {
+        showToast('warning', aliasCheck.error || 'Invalid nicknames');
+        return;
+    }
+
+    char.aliases = aliases;
     char.description = (description || '').trim();
     char.last_updated = Date.now();
     await saveChatConditional();
