@@ -20,14 +20,16 @@ import {
 
 /**
  * Build a cache key for the current retrieval turn.
- * Same user message + memory set + retrieval settings → reusable on swipe/regenerate.
+ * Same user message + retrieval settings → reusable on swipe/regenerate.
+ * Memory-store fingerprints are intentionally excluded: post-reply extraction
+ * updates memories/last_extraction_batch and would otherwise bust the cache
+ * on every regenerate after the batch finishes.
  * @param {string} pendingUserMessage - Last user message text
  * @returns {string|null}
  */
 export function buildRetrievalCacheKey(pendingUserMessage = '') {
     const context = getContext();
-    const data = getOpenVaultData();
-    if (!context?.chat || !data) return null;
+    if (!context?.chat) return null;
 
     const settings = extension_settings[extensionName];
     const chat = context.chat;
@@ -39,15 +41,12 @@ export function buildRetrievalCacheKey(pendingUserMessage = '') {
         }
     }
 
-    const memories = data[MEMORIES_KEY] || [];
     const parts = [
         getCurrentChatId() || 'unknown',
         String(lastUserIdx),
         String(pendingUserMessage.length),
         // Lightweight content fingerprint (avoid storing full message)
         String(simpleHash(pendingUserMessage)),
-        String(memories.length),
-        String(data[LAST_BATCH_KEY] || ''),
         String(settings.tokenBudget),
         String(settings.maxMemoriesPerRetrieval),
         settings.smartRetrievalEnabled ? '1' : '0',
