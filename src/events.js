@@ -110,8 +110,13 @@ export async function onBeforeGeneration(type, options, dryRun = false) {
     operationState.retrievalInProgress = true;
 
     try {
-        // Auto-hide old messages before building context
-        await autoHideOldMessages();
+        // Auto-hide only on new turns. On swipe/regenerate the chat length hasn't
+        // grown; hiding then is usually deferred work unblocked by post-reply
+        // extraction advancing last_processed, which confuses users and is unrelated
+        // to the reroll.
+        if (!isRerollGenerationType(type)) {
+            await autoHideOldMessages();
+        }
 
         // Skip retrieval if no memories exist yet
         const data = getOpenVaultData();
