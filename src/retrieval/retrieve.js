@@ -19,54 +19,22 @@ import {
 } from '../places.js';
 
 /**
- * Build a cache key for the current retrieval turn.
- * Same user message + retrieval settings → reusable on swipe/regenerate.
- * Memory-store fingerprints are intentionally excluded: post-reply extraction
- * updates memories/last_extraction_batch and would otherwise bust the cache
- * on every regenerate after the batch finishes.
- * @param {string} pendingUserMessage - Last user message text
- * @returns {string|null}
+ * Build a cache key for swipe/regenerate reuse.
+ * Keyed by chat + retrieval settings only — not by last is_user message.
+ * ST emits GENERATION_AFTER_COMMANDS before the user message is inserted, and
+ * NPCs can post consecutive messages, so turn identity via is_user is unstable.
+ * New non-reroll generations always re-fetch and overwrite this entry.
+ * @returns {string}
  */
-export function buildRetrievalCacheKey(pendingUserMessage = '') {
-    const context = getContext();
-    if (!context?.chat) return null;
-
+export function buildRetrievalCacheKey() {
     const settings = extension_settings[extensionName];
-    const chat = context.chat;
-    let lastUserIdx = -1;
-    for (let i = chat.length - 1; i >= 0; i--) {
-        if (chat[i].is_user && !chat[i].is_system) {
-            lastUserIdx = i;
-            break;
-        }
-    }
-
-    const parts = [
+    return [
         getCurrentChatId() || 'unknown',
-        String(lastUserIdx),
-        String(pendingUserMessage.length),
-        // Lightweight content fingerprint (avoid storing full message)
-        String(simpleHash(pendingUserMessage)),
         String(settings.tokenBudget),
         String(settings.maxMemoriesPerRetrieval),
         settings.smartRetrievalEnabled ? '1' : '0',
         String(settings.retrievalProfile || ''),
-    ];
-    return parts.join('|');
-}
-
-/**
- * Simple string hash for cache keys
- * @param {string} str
- * @returns {number}
- */
-function simpleHash(str) {
-    let hash = 0;
-    for (let i = 0; i < (str || '').length; i++) {
-        hash = ((hash << 5) - hash) + str.charCodeAt(i);
-        hash |= 0;
-    }
-    return hash;
+    ].join('|');
 }
 
 /**
@@ -90,14 +58,13 @@ export function injectContext(contextText) {
 
 /**
  * Try to reuse a cached injection for swipe/regenerate
- * @param {string} pendingUserMessage - Last user message text
  * @returns {boolean} True if cache was applied
  */
-export function tryApplyCachedRetrieval(pendingUserMessage = '') {
-    const key = buildRetrievalCacheKey(pendingUserMessage);
+export function tryApplyCachedRetrieval() {
+    const key = buildRetrievalCacheKey();
     const cached = getCachedRetrieval(key);
     if (!cached) {
-        log('Retrieval cache miss');
+        log(`Retrieval cache miss (key=${key})`);
         return false;
     }
 
@@ -270,8 +237,7 @@ export async function retrieveAndInjectContext() {
 
         if (formattedContext) {
             injectContext(formattedContext);
-            const lastUserMessage = [...chat].reverse().find(m => m.is_user && !m.is_system);
-            setCachedRetrieval(buildRetrievalCacheKey(lastUserMessage?.mes || ''), formattedContext);
+            setCachedRetrieval(buildRetrievalCacheKey(), formattedContext);
             log(`Injected ${relevantMemories.length} memories + ${selectedCharacters.length} character profiles into context`);
             $('.openvault-retrieving-toast').remove();
             const parts = [];
@@ -468,7 +434,7 @@ export async function updateInjection(pendingUserMessage = '') {
 
     if (formattedContext) {
         injectContext(formattedContext);
-        setCachedRetrieval(buildRetrievalCacheKey(pendingUserMessage), formattedContext);
+        setCachedRetrieval(buildRetrievalCacheKey(), formattedContext);
         log(`Injection updated: ${relevantMemories.length} memories + ${selectedCharacters.length} character profiles`);
     }
 }

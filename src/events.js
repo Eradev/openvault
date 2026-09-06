@@ -133,15 +133,18 @@ export async function onBeforeGeneration(type, options, dryRun = false) {
         setStatus('retrieving');
         setGenerationLock();
 
-        // Get context for retrieval - use the last user message if available
-        const context = getContext();
-        const chat = context.chat || [];
-        const lastUserMessage = [...chat].reverse().find(m => m.is_user && !m.is_system);
-        const pendingUserMessage = lastUserMessage?.mes || '';
+        // ST fires GENERATION_AFTER_COMMANDS before sendMessageAsUser, so on a
+        // normal send the outgoing text is still in the textarea — not in chat.
+        // On swipe/regenerate (and empty NPC follow-ups) don't assume the last
+        // is_user row is the turn being generated; chat already has context.
+        let pendingUserMessage = '';
+        if (!isRerollGenerationType(type) && type !== 'continue' && type !== 'impersonate' && type !== 'quiet') {
+            pendingUserMessage = String($('#send_textarea').val() || '');
+        }
 
         // Swipe/regenerate: reuse last injection when cache is enabled and still valid
         if (settings.cacheRetrievalOnReroll && isRerollGenerationType(type)) {
-            if (tryApplyCachedRetrieval(pendingUserMessage)) {
+            if (tryApplyCachedRetrieval()) {
                 log(`>>> Using cached retrieval for ${type}`);
                 showToast('info', 'Using cached memory context', 'OpenVault', { timeOut: 1500 });
                 setStatus('ready');
